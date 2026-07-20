@@ -11,3 +11,14 @@ services:
     command: uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
     env_file:
       - .env
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8080
