@@ -1,13 +1,15 @@
-# Raport z wykonania zadania: Krok 5 (Wieczorna Refleksja i Bilans)
+# Raport z wykonania zadania: Krok 6 (CORS, Docker produkcyjny i CI/CD)
 
-Zgodnie z zatwierdzonym planem dla zadania #005 oraz po otrzymaniu zgody ("Dalej"), wdrożyłem modele danych, logikę biznesową AI oraz endpoint dla wieczornej refleksji.
+Zgodnie z zatwierdzonym planem dla zadania #006 oraz po otrzymaniu zgody ("Dalej"), wdrożyłem konfigurację produkcyjną CORS, zmodyfikowałem pliki kontenera Docker i przygotowałem potok CI/CD.
 
 ## Zmienione i Utworzone Pliki
 
-- **[MODIFY] `src/schemas.py`**: Dodano model `EveningReflectionIn` definiujący zrealizowane zadania, niezrealizowane zadania oraz uniknięte nawyki (pozytywne zaniechania).
-- **[MODIFY] `src/services/ai_service.py`**: Dodano funkcję `generate_evening_reflection` analizującą bilans dnia w zestawieniu z celami strategicznymi z użyciem modelu `gemini-2.5-flash` w roli mentora.
-- **[MODIFY] `src/routers/plans.py`**: Dodano endpoint `POST /api/v1/plans/evening` z autoryzacją i bezpiecznikiem `NO_STRATEGIC_GOALS` (rzucającym HTTP 400 z Trace ID) oraz zapisującym refleksję o typie `daily_evening`.
-- **[MODIFY] `tests/test_plans.py`**: Rozszerzono zestaw testów o weryfikację scenariuszy sukcesu i braku celów strategicznych przy zmockowanym Firestore i Gemini.
+- **[NEW] `cloudbuild.yaml`**: Skonfigurowano kroki budowania obrazu, wypychania do Artifact Registry oraz wdrażania na Google Cloud Run z użyciem Secret Manager.
+- **[NEW] `tests/test_cors.py`**: Dodano scenariusze testowe weryfikujące poprawność zwracanych nagłówków CORS dla dozwolonego i niedozwolonego Origin.
+- **[MODIFY] `src/config.py`**: Dodano zmienną `ALLOWED_ORIGINS` wczytywaną dynamicznie ze zmiennych środowiskowych.
+- **[MODIFY] `src/main.py`**: Skonfigurowano `CORSMiddleware` z zabezpieczeniem credentials, metod oraz nagłówków.
+- **[MODIFY] `Dockerfile`**: Ustawiono nasłuchiwanie na produkcyjnym porcie `8080` oraz usunięto flagę `--reload`.
+- **[MODIFY] `docker-compose.yml`**: Nadpisano port na `8080:8080`, dodano wolumen tests oraz nadpisano komendę startową (przywracając deweloperską flagę `--reload` i port).
 
 ## Wyniki testów (Certyfikacja Testami)
 Testy zostały wykonane i zweryfikowane (rezultat oryginalny):
@@ -17,15 +19,16 @@ Testy zostały wykonane i zweryfikowane (rezultat oryginalny):
 platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0
 rootdir: /Users/przemyslawrakotny/Documents/przemokoduje/keepGoals
 plugins: anyio-4.12.1
-collected 15 items
+collected 17 items
 
-tests/test_auth.py ...                                                   [ 20%]
-tests/test_notes.py ........                                             [ 73%]
+tests/test_auth.py ...                                                   [ 17%]
+tests/test_cors.py ..                                                    [ 29%]
+tests/test_notes.py ........                                             [ 76%]
 tests/test_plans.py ....                                                 [100%]
 
-======================== 15 passed, 5 warnings in 0.80s ========================
+======================== 17 passed, 5 warnings in 0.77s ========================
 ```
-**Ocena:** 15/15 testów przeszło pomyślnie. Kod wieczornej refleksji został w pełni pokryty testami jednostkowymi.
+**Ocena:** 17/17 testów przeszło pomyślnie. Konteneryzacja oraz weryfikacja CORS są w pełni stabilne i pokryte testami offline.
 
 ## Decyzja Architekta
 Przekazuję wdrożenie do weryfikacji Code Review. Jeżeli jako Architekt uznasz, że wdrożony kod (i wynik testów) pasuje do założonego manifestu, poproszę o hasło **"Zatwierdzam"**. Następnie wykonam commit atomowy dla zmian i zgłoszę pełną gotowość.

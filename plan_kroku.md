@@ -1,35 +1,40 @@
-# Plan Kroku 5: Implementacja Wieczornej Refleksji (AI Service, Router plans, Testy)
+# Plan Kroku 6: Konfiguracja Produkcyjna (CORS, Docker, CI/CD Cloud Build, Testy)
 
-**Cel:** Rozszerzenie systemu o funkcjonalność wieczornej refleksji (POST `/api/v1/plans/evening`). Endpoint przyjmie zrealizowane/niezrealizowane zadania oraz pozytywne nawyki użytkownika, prześle je wraz z celami strategicznymi do modelu Gemini w celu wygenerowania mentorskiemu podsumowania z wnioskami na kolejny dzień, a następnie zapisze wynik w Firestore jako notatkę o typie `daily_evening`.
+**Cel:** Dostosowanie aplikacji keepGoals do standardów chmurowych (Google Cloud Run), zabezpieczenie dostępu za pomocą polityki CORS, optymalizacja Dockerfile pod kątem produkcji z jednoczesnym zachowaniem Hot-Reload dla środowiska deweloperskiego, oraz wdrożenie potoku CI/CD przy użyciu Google Cloud Build.
 
 ## Pliki do utworzenia i modyfikacji
 
-### [MODIFY] `src/schemas.py`
-*   Dodanie modelu `EveningReflectionIn(BaseModel)` z polami:
-    *   `completed_tasks`: `list[str]` (lista zrealizowanych zadań)
-    *   `uncompleted_tasks`: `list[str]` (lista niezrealizowanych zadań)
-    *   `avoided_habits`: `list[str]` (lista pozytywnych zaniechań / nawyków do uniknięcia)
+### [NEW] `cloudbuild.yaml`
+Konfiguracja procesu CI/CD dla Google Cloud Build:
+*   Krok 1: Budowanie produkcyjnego obrazu Docker na bazie aktualnego kodu z tagiem zawierającym `$COMMIT_SHA`.
+*   Krok 2: Wypchnięcie (`docker push`) obrazu do repozytorium w Google Artifact Registry (`europe-central2-docker.pkg.dev`).
+*   Krok 3: Wdrożenie na Google Cloud Run z flagami:
+    *   `--region europe-central2`
+    *   `--allow-unauthenticated` (dostęp publiczny dla API)
+    *   `--set-secrets` pobierające wrażliwe dane (`GEMINI_API_KEY` oraz plik certyfikatu Firebase `FIREBASE_CREDENTIALS_PATH`) bezpośrednio z Google Secret Manager.
 
-### [MODIFY] `src/services/ai_service.py`
-*   Dodanie funkcji `generate_evening_reflection(reflection_data: dict, strategic_goals: list[str]) -> str`:
-    *   Formatowanie promptu dla Gemini, przekazującego cele strategiczne oraz listy zadań/nawyków z refleksji wieczornej.
-    *   Prompt systemowy instruuje model, aby działał jak mentor rozwoju osobistego i wygenerował zwięzłe podsumowanie z konstruktywnymi wnioskami optymalizacyjnymi na jutro w formacie Markdown.
+### [NEW] `tests/test_cors.py`
+Testy jednostkowe weryfikujące poprawność nagłówków CORS:
+*   `test_cors_headers`: Sprawdzenie, czy żądanie z dozwolonego Origin (`http://localhost:3000`) otrzymuje w nagłówku odpowiedzi `access-control-allow-origin`.
+*   `test_cors_headers_invalid_origin`: Weryfikacja, czy żądanie z niedozwolonego Origin nie otrzymuje nagłówków CORS.
 
-### [MODIFY] `src/routers/plans.py`
-*   Dodanie punktu końcowego `POST /api/v1/plans/evening` -> status 201 (Created), zwraca `NoteResponse`.
-*   **Logika endpointu:**
-    1.  Autoryzacja za pomocą `Depends(verify_token)`.
-    2.  Przyjęcie body `reflection_in: EveningReflectionIn`.
-    3.  Pobranie celów strategicznych użytkownika z bazy (`crud.get_notes`).
-    4.  *Walidacja*: Jeśli brak celów strategicznych, przerwij działanie i zwróć HTTP 400 z kodem błędu `NO_STRATEGIC_GOALS` i unikalnym `trace_id`.
-    5.  Wywołanie `generate_evening_reflection` z przekazaniem danych z refleksji (`reflection_in.model_dump()`) oraz celów strategicznych.
-    6.  Utworzenie nowej notatki z tytułem `"Refleksja Wieczorna"` oraz typem `"daily_evening"`.
-    7.  Zapisanie w bazie przy użyciu `crud.create_note` i zwrócenie struktury `NoteResponse`.
+### [MODIFY] `src/config.py`
+*   Dodanie zmiennej `ALLOWED_ORIGINS` pobieranej z zmiennej środowiskowej o tej samej nazwie (z wartością domyślną `"http://localhost:3000"` rozdzielaną przecinkami) do konfiguracji dozwolonych źródeł CORS.
 
-### [MODIFY] `tests/test_plans.py`
-*   Dodanie testów jednostkowych weryfikujących endpoint wieczornej refleksji:
-    *   `test_generate_evening_reflection_success`: Sukces zapisu podsumowania wieczornego z walidacją zwracanych danych i typu `daily_evening`.
-    *   `test_generate_evening_reflection_no_strategic_goals`: Test błędu walidacji HTTP 400 przy braku celów strategicznych w bazie z weryfikacją obecności `trace_id`.
+### [MODIFY] `src/main.py`
+*   Import i wstrzyknięcie `CORSMiddleware` z FastAPI.
+*   Konfiguracja middleware na podstawie źródeł z `config.py`.
+*   Restrykcyjne określenie dozwolonych metod (`["GET", "POST", "PUT", "DELETE", "OPTIONS"]`) i zezwolenie na przesyłanie credentials (`allow_credentials=True`).
+
+### [MODIFY] `Dockerfile`
+*   Zmiana portu startowego z `8000` na `8080` (standard Google Cloud Run).
+*   Usunięcie flagi deweloperskiej `--reload` z komendy startowej CMD w celu optymalizacji i rygoru produkcyjnego.
+*   Docelowa komenda: `CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]`.
+
+### [MODIFY] `docker-compose.yml`
+*   Zmiana mapowania portów na `8080:8080`.
+*   Dodanie wolumenu dla folderu `tests`, aby umożliwić uruchamianie testów wewnątrz kontenera: `- ./tests:/app/tests`.
+*   Nadpisanie komendy produkcyjnej z Dockerfile wersją deweloperską z włączoną flagą `--reload` przy użyciu dyrektywy `command`.
 
 ---
 
@@ -40,10 +45,12 @@ Zgodnie ze Standaryzacją Środowiska, wszystkie testy zostaną uruchomione wewn
 docker-compose run --rm backend bash -c "pytest tests/"
 ```
 
-Testy muszą zakończyć się sukcesem bez wywoływania rzeczywistego API Gemini (mockowanie `generate_evening_reflection`) ani produkcyjnej bazy danych Firestore.
+Weryfikacji podlegać będzie:
+1.  Poprawność nagłówków CORS przy zapytaniach OPTIONS (Preflight) i GET.
+2.  Czy testy weryfikujące autoryzację, notatki oraz plany nadal działają bezbłędnie na nowym porcie 8080.
 
 ## Koszty
-Podsumowanie wieczorne również mockuje komunikację z API Google GenAI, gwarantując brak opłat na etapie testów (koszt: 0 PLN).
+Definicje CI/CD i konfiguracja CORS nie generują opłat. Narzędzie Cloud Build posiada darmowy limit 120 minut budowania miesięcznie. Uruchomienie kontenera w Cloud Run rozliczane jest za rzeczywiste milisekundy użycia procesora i pamięci RAM (bardzo niski koszt w fazie dev/test). Koszt testów offline: 0 PLN.
 
 ---
 **TWARDY STOP (Halt)**
