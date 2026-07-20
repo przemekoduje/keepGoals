@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { isDemoMode } from "../config/firebase";
 
 export const Login: React.FC = () => {
   const { user, loginWithGoogle } = useAuth();
@@ -78,6 +79,12 @@ export const Login: React.FC = () => {
           <p className="text-xs text-rose-500 mt-4 font-medium">
             {error}
           </p>
+        )}
+
+        {isDemoMode && (
+          <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300 text-left">
+            <span className="font-bold">Tryb demonstracyjny:</span> Kliknij przycisk powyżej, aby zalogować się jako użytkownik demo (nie wykryto kluczy Firebase w środowisku).
+          </div>
         )}
       </div>
     </div>
