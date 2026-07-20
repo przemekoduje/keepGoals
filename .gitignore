@@ -1,0 +1,16 @@
+# Środowisko
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testy
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Wirtualne środowisko (opcjonalnie, używamy dockera ale warto mieć)
+venv/
+.venv/
+env/
