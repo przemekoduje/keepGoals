@@ -38,3 +38,18 @@ export async function fetchNotes(): Promise<Note[]> {
   
   return response.json();
 }
+
+export async function createNote(noteData: { title: string; content: string; note_type: string }): Promise<Note> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/notes`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(noteData),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd tworzenia notatki: ${response.status}`);
+  }
+
+  return response.json();
+}

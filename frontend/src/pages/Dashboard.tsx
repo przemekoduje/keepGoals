@@ -2,14 +2,18 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { fetchNotes } from "../services/api";
 import type { Note } from "../services/api";
+import { Modal } from "../components/Modal";
+import { CreateGoalForm } from "../components/CreateGoalForm";
 
 export const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  useEffect(() => {
+  const loadNotes = () => {
+    setLoading(true);
     fetchNotes()
       .then((data) => {
         setNotes(data);
@@ -20,7 +24,16 @@ export const Dashboard: React.FC = () => {
         setError("Nie udało się pobrać notatek. Upewnij się, że backend jest połączony.");
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadNotes();
   }, []);
+
+  const handleCreateSuccess = () => {
+    setIsModalOpen(false);
+    loadNotes();
+  };
 
   const strategicNotes = notes.filter((n) => n.note_type === "strategic");
   const dailyNotes = notes.filter(
@@ -108,10 +121,28 @@ export const Dashboard: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Kolumna 1: Cele Strategiczne */}
             <section className="space-y-6">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white flex items-center space-x-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-900 dark:bg-slate-100" />
-                <span>Cele Strategiczne</span>
-              </h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white flex items-center space-x-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-900 dark:bg-slate-100" />
+                  <span>Cele Strategiczne</span>
+                </h2>
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="p-2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors shadow-sm"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2.5}
+                    stroke="currentColor"
+                    className="w-5 h-5"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </button>
+              </div>
+              
               {strategicNotes.length === 0 ? (
                 <div className="bg-white dark:bg-slate-800 rounded-[24px] p-8 border border-slate-100 dark:border-slate-700 text-center text-slate-400 dark:text-slate-500">
                   Brak celów strategicznych.
@@ -174,6 +205,11 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </main>
+
+      {/* Modal dodawania celu */}
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Dodaj Cel Strategiczny">
+        <CreateGoalForm onSuccess={handleCreateSuccess} onCancel={() => setIsModalOpen(false)} />
+      </Modal>
     </div>
   );
 };
