@@ -23,3 +23,9 @@ class NoteResponse(NoteBase):
     model_config = {
         "from_attributes": True
     }
+
+class EveningReflectionIn(BaseModel):
+    completed_tasks: list[str] = Field(..., description="Lista zadań zrealizowanych")
+    uncompleted_tasks: list[str] = Field(..., description="Lista zadań niezrealizowanych")
+    avoided_habits: list[str] = Field(..., description="Lista pozytywnych zaniechań / nawyków do uniknięcia")
+

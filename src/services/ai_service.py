@@ -31,3 +31,37 @@ Zwróć wyłącznie plan dnia jako listę zadań do wykonania w formacie Markdow
         contents=prompt
     )
     return response.text
+
+def generate_evening_reflection(reflection_data: dict, strategic_goals: list[str]) -> str:
+    """
+    Generuje wieczorną refleksję (mentor) analizując sukcesy i porażki dnia w odniesieniu do celów strategicznych.
+    """
+    client = get_genai_client()
+    
+    goals_formatted = "\n".join([f"- {goal}" for goal in strategic_goals])
+    completed_formatted = "\n".join([f"- {task}" for task in reflection_data.get("completed_tasks", [])])
+    uncompleted_formatted = "\n".join([f"- {task}" for task in reflection_data.get("uncompleted_tasks", [])])
+    avoided_formatted = "\n".join([f"- {habit}" for habit in reflection_data.get("avoided_habits", [])])
+    
+    prompt = f"""Jesteś osobistym mentorem rozwoju osobistego i produktywności.
+Twoim zadaniem jest przeanalizowanie dzisiejszych sukcesów i porażek użytkownika w kontekście jego celów strategicznych.
+
+Cele strategiczne użytkownika:
+{goals_formatted}
+
+Dzisiejsza wieczorna refleksja:
+- Zadania zrealizowane dzisiaj:
+{completed_formatted or '- (brak)'}
+- Zadania niezrealizowane dzisiaj:
+{uncompleted_formatted or '- (brak)'}
+- Uniknięte niechciane nawyki (pozytywne zaniechania):
+{avoided_formatted or '- (brak)'}
+
+Wygeneruj zwięzłe podsumowanie z konstruktywnymi wnioskami optymalizacyjnymi na jutro w formacie Markdown. Twoja odpowiedź powinna być wspierająca, obiektywna i skupiona na konkretnych krokach poprawy."""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
+    return response.text
+

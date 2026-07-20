@@ -1,37 +1,35 @@
-# Plan Kroku 4: Integracja SDK Gemini (AI Service) i Generowanie Planów Porannych
+# Plan Kroku 5: Implementacja Wieczornej Refleksji (AI Service, Router plans, Testy)
 
-**Cel:** Wdrożenie integracji z modelami Gemini za pomocą nowej biblioteki `google-genai` oraz stworzenie punktu końcowego `POST /api/v1/plans/morning`. Endpoint ten pobierze cele strategiczne zalogowanego użytkownika, wygeneruje dla nich spersonalizowaną listę zadań przy użyciu AI, a następnie asynchronicznie zapisze wynik jako nową notatkę o typie `daily_morning` w Firestore.
+**Cel:** Rozszerzenie systemu o funkcjonalność wieczornej refleksji (POST `/api/v1/plans/evening`). Endpoint przyjmie zrealizowane/niezrealizowane zadania oraz pozytywne nawyki użytkownika, prześle je wraz z celami strategicznymi do modelu Gemini w celu wygenerowania mentorskiemu podsumowania z wnioskami na kolejny dzień, a następnie zapisze wynik w Firestore jako notatkę o typie `daily_evening`.
 
 ## Pliki do utworzenia i modyfikacji
 
-### [NEW] `src/services/ai_service.py`
-Serwis odpowiedzialny za komunikację z modelami Gemini:
-*   Inicjalizacja `client = genai.Client(api_key=settings.GEMINI_API_KEY)` z modułu `google-genai`.
-*   Funkcja `generate_morning_plan(strategic_goals: list[str]) -> str`:
-    *   Wstrzykuje listę celów użytkownika w predefiniowany prompt systemowy.
-    *   System prompt instruuje model Gemini (np. `gemini-2.5-flash`), aby działał jako asystent produktywności i zwrócił listę zadań (checklistę z `- [ ]`) w formacie czystego Markdown, bez dodatkowych komentarzy.
+### [MODIFY] `src/schemas.py`
+*   Dodanie modelu `EveningReflectionIn(BaseModel)` z polami:
+    *   `completed_tasks`: `list[str]` (lista zrealizowanych zadań)
+    *   `uncompleted_tasks`: `list[str]` (lista niezrealizowanych zadań)
+    *   `avoided_habits`: `list[str]` (lista pozytywnych zaniechań / nawyków do uniknięcia)
 
-### [NEW] `src/routers/plans.py`
-Router FastAPI obsługujący orkiestrację planów dnia:
-*   `POST /api/v1/plans/morning` -> status 201 (Created), zwraca `NoteResponse`.
+### [MODIFY] `src/services/ai_service.py`
+*   Dodanie funkcji `generate_evening_reflection(reflection_data: dict, strategic_goals: list[str]) -> str`:
+    *   Formatowanie promptu dla Gemini, przekazującego cele strategiczne oraz listy zadań/nawyków z refleksji wieczornej.
+    *   Prompt systemowy instruuje model, aby działał jak mentor rozwoju osobistego i wygenerował zwięzłe podsumowanie z konstruktywnymi wnioskami optymalizacyjnymi na jutro w formacie Markdown.
+
+### [MODIFY] `src/routers/plans.py`
+*   Dodanie punktu końcowego `POST /api/v1/plans/evening` -> status 201 (Created), zwraca `NoteResponse`.
 *   **Logika endpointu:**
     1.  Autoryzacja za pomocą `Depends(verify_token)`.
-    2.  Pobranie wszystkich notatek użytkownika z Firestore (`crud.get_notes`).
-    3.  Filtrowanie i wyekstrahowanie treści notatek o typie `strategic`.
-    4.  *Walidacja (Security/Logic)*: Jeśli lista celów strategicznych jest pusta, operacja zostaje przerwana z kodem błędu HTTP 400 (`NO_STRATEGIC_GOALS`), czytelnym komunikatem i unikalnym `trace_id`.
-    5.  Wywołanie `generate_morning_plan` z celami strategicznymi jako argumentem.
-    6.  Utworzenie nowej notatki z wygenerowanym tekstem, przypisaniem tytułu `"Plan Poranny"` i typu `"daily_morning"`.
-    7.  Zapisanie nowej notatki za pomocą `crud.create_note` i zwrócenie struktury `NoteResponse`.
+    2.  Przyjęcie body `reflection_in: EveningReflectionIn`.
+    3.  Pobranie celów strategicznych użytkownika z bazy (`crud.get_notes`).
+    4.  *Walidacja*: Jeśli brak celów strategicznych, przerwij działanie i zwróć HTTP 400 z kodem błędu `NO_STRATEGIC_GOALS` i unikalnym `trace_id`.
+    5.  Wywołanie `generate_evening_reflection` z przekazaniem danych z refleksji (`reflection_in.model_dump()`) oraz celów strategicznych.
+    6.  Utworzenie nowej notatki z tytułem `"Refleksja Wieczorna"` oraz typem `"daily_evening"`.
+    7.  Zapisanie w bazie przy użyciu `crud.create_note` i zwrócenie struktury `NoteResponse`.
 
-### [MODIFY] `src/main.py`
-*   Podłączenie nowego routera plans: `app.include_router(plans_router)`.
-
-### [NEW] `tests/test_plans.py`
-Testy jednostkowe weryfikujące logikę orkiestracji planów w izolacji:
-*   Mockowanie uwierzytelniania FastAPI i bazy danych `get_db`.
-*   Mockowanie komunikacji z API Gemini (`generate_morning_plan` w `src.routers.plans`) oraz komunikacji z Firestore (`get_notes`, `create_note` w `src.routers.plans`), zapewniające wykonanie testów w trybie całkowicie offline.
-*   **Scenariusz 1 (Sukces)**: Zwrócenie 201, poprawne mapowanie wygenerowanego planu na typ `daily_morning` o tytule "Plan Poranny".
-*   **Scenariusz 2 (Błąd)**: Brak celów strategicznych w bazie powoduje HTTP 400 z unikalnym `trace_id` i kodem `NO_STRATEGIC_GOALS`.
+### [MODIFY] `tests/test_plans.py`
+*   Dodanie testów jednostkowych weryfikujących endpoint wieczornej refleksji:
+    *   `test_generate_evening_reflection_success`: Sukces zapisu podsumowania wieczornego z walidacją zwracanych danych i typu `daily_evening`.
+    *   `test_generate_evening_reflection_no_strategic_goals`: Test błędu walidacji HTTP 400 przy braku celów strategicznych w bazie z weryfikacją obecności `trace_id`.
 
 ---
 
@@ -42,10 +40,10 @@ Zgodnie ze Standaryzacją Środowiska, wszystkie testy zostaną uruchomione wewn
 docker-compose run --rm backend bash -c "pytest tests/"
 ```
 
-Wszystkie testy muszą zakończyć się sukcesem bez wykonywania jakichkolwiek zapytań sieciowych do API Google GenAI ani do chmury Google Cloud Firestore.
+Testy muszą zakończyć się sukcesem bez wywoływania rzeczywistego API Gemini (mockowanie `generate_evening_reflection`) ani produkcyjnej bazy danych Firestore.
 
 ## Koszty
-Integracja z API Gemini na poziomie produkcyjnym wykorzystuje model `gemini-2.5-flash`, który posiada darmowy limit zapytań lub bardzo niski koszt eksploatacyjny. Na etapie testów (dzięki mockom) generowane koszty wynoszą dokładnie 0 PLN.
+Podsumowanie wieczorne również mockuje komunikację z API Google GenAI, gwarantując brak opłat na etapie testów (koszt: 0 PLN).
 
 ---
 **TWARDY STOP (Halt)**
