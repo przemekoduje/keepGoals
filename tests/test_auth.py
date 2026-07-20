@@ -5,6 +5,9 @@ from unittest.mock import patch
 # Mockujemy inicjalizację bazy danych Firebase aby testy nie zgłaszały błędów braku certyfikatu
 with patch("firebase_admin.initialize_app"), patch("firebase_admin.firestore.client"):
     from src.main import app
+    from src.database import get_db
+    from unittest.mock import MagicMock
+    app.dependency_overrides[get_db] = lambda: MagicMock()
 
 client = TestClient(app)
 
@@ -29,8 +32,7 @@ def test_access_notes_with_valid_token(mock_verify_token):
     
     assert response.status_code == 200
     json_data = response.json()
-    assert json_data["user"]["uid"] == "test_uid_123"
-    assert json_data["user"]["email"] == "test@example.com"
+    assert isinstance(json_data, list)
 
 @patch("src.auth.auth.verify_id_token")
 def test_access_notes_with_invalid_token(mock_verify_token):

@@ -1,5 +1,5 @@
-from fastapi import FastAPI, Depends
-from src.auth import verify_token
+from fastapi import FastAPI
+from src.routers.notes import router as notes_router
 
 app = FastAPI(title="KeepGoals API")
 
@@ -7,9 +7,5 @@ app = FastAPI(title="KeepGoals API")
 def health_check():
     return {"status": "KeepGoals API is running"}
 
-@app.get("/api/v1/notes")
-def get_notes(user: dict = Depends(verify_token)):
-    return {
-        "message": "To są twoje notatki", 
-        "user": user
-    }
+app.include_router(notes_router)
+

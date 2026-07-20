@@ -1,40 +1,74 @@
-# Plan Kroku 2: Implementacja Autoryzacji Firebase i Inicjalizacja Firestore
+# Plan Kroku 3: Implementacja Modeli Pydantic, Warstwy CRUD oraz Endpointów Zarządzania Notatkami w Firestore
 
-**Cel:** Wdrożenie bezpiecznej warstwy autoryzacyjnej komunikującej się z Firebase Authentication (weryfikacja tokenów JWT) oraz stabilnej inicjalizacji Google Cloud Firestore dla przyszłego zapisu notatek. Całość objęta Certyfikacją Testami przy użyciu zamockowanych żądań, bez modyfikowania lub zanieczyszczania zewnętrznych środowisk chmurowych.
+**Cel:** Wdrożenie pełnego cyklu zarządzania notatkami (CRUD: Create, Read, Update, Delete) w architekturze FastAPI + Firestore z autoryzacją Firebase. Plan zakłada pełną izolację danych użytkownika poprzez zapis w subkolekcji `users/{uid}/notes` (Security by Default), walidację danych przy użyciu Pydantic oraz certyfikację testami jednostkowymi z mockowaniem bazy i autoryzacji.
 
-## Pliki
+## Pliki do utworzenia i modyfikacji
 
-### [NEW] `src/config.py`
-- **Logika:** Wdrożenie wbudowanego modułu `os` do bezpiecznego odczytu zmiennych środowiskowych. Powstanie klasa/zmienna odpowiadająca za ładowanie `FIREBASE_CREDENTIALS_PATH`.
+### [NEW] `src/schemas.py`
+Definicja modeli Pydantic do walidacji danych wejściowych i wyjściowych (DTO):
+*   `NoteBase`: Wspólne pola dla notatki:
+    *   `title`: `Optional[str]` (domyślnie `None`)
+    *   `content`: `str` (wymagane)
+    *   `note_type`: `str` (np. `'strategic'`, `'daily_morning'`, `'daily_evening'`)
+*   `NoteCreate`: Dziedziczy po `NoteBase`. Reprezentuje dane przesyłane przy tworzeniu notatki.
+*   `NoteUpdate`: Wszystkie pola z `NoteBase` oznaczone jako opcjonalne (`Optional`), co umożliwia częściową aktualizację (PATCH/PUT).
+*   `NoteResponse`: Dziedziczy po `NoteBase`. Reprezentuje pełną notatkę zwracaną z API, rozszerzoną o:
+    *   `id`: `str` (identyfikator dokumentu z Firestore)
+    *   `user_id`: `str` (identyfikator właściciela notatki `uid`)
+    *   `created_at`: `datetime` (czas utworzenia)
 
-### [NEW] `src/database.py`
-- **Logika:** Implementacja inicjalizacji SDK Firebase (`firebase_admin.initialize_app`) na podstawie uwierzytelnienia z pliku konfiguracyjnego. Implementacja eksportu klienta chmurowego `firebase_admin.firestore.client()`. Zastosowanie wbudowanego w firebase-admin zabezpieczenia przed ponowną inicjalizacją przy Hot-Reloadingu (sprawdzanie `if not firebase_admin._apps`).
+### [NEW] `src/crud.py`
+Funkcje pomocnicze do bezpośredniej komunikacji z Firestore, realizujące izolację danych użytkownika w subkolekcji `users/{uid}/notes`:
+*   `create_note(db, uid: str, note_in: NoteCreate) -> dict`: Zapisuje nową notatkę z automatycznym przypisaniem `user_id` oraz `created_at` (zapisywanym jako standardowy timestamp/datetime). Zwraca zapisany słownik z wygenerowanym ID dokumentu.
+*   `get_notes(db, uid: str) -> list[dict]`: Pobiera wszystkie notatki użytkownika (strumieniowanie z subkolekcji).
+*   `get_note(db, uid: str, note_id: str) -> Optional[dict]`: Pobiera pojedynczą notatkę na podstawie ID dokumentu. Zwraca `None`, jeśli dokument nie istnieje.
+*   `update_note(db, uid: str, note_id: str, note_in: NoteUpdate) -> Optional[dict]`: Aktualizuje pola notatki. Jeśli notatka nie istnieje, zwraca `None`. W przeciwnym razie pobiera zaktualizowany dokument i zwraca jego strukturę.
+*   `delete_note(db, uid: str, note_id: str) -> bool`: Usuwa dokument notatki. Zwraca `True` przy sukcesie, a `False`, gdy notatka nie istnieje.
 
-### [NEW] `src/auth.py`
-- **Logika:** Zdefiniowanie warstwy wstrzykiwania zależności (Dependency Injection) FastAPI `HTTPBearer`. Walidacja przechodzącego tokena za pomocą `firebase_admin.auth.verify_id_token`. W przypadku sukcesu: przekazywanie wyekstrahowanych danych usera (`uid`, `email`). Przy niepowodzeniu: zgłaszanie wyjątku 401 ze sformatowanym, jednolitym komunikatem bezpieczeństwa zwierającym Trace ID.
+### [NEW] `src/routers/notes.py`
+Modularny router FastAPI obsługujący operacje na notatkach:
+*   `POST /api/v1/notes` -> status 201 (Created), zwraca `NoteResponse`.
+*   `GET /api/v1/notes` -> status 200, zwraca listę `List[NoteResponse]`.
+*   `GET /api/v1/notes/{note_id}` -> status 200, zwraca `NoteResponse`. Jeśli nie istnieje, rzuca HTTP 404.
+*   `PUT /api/v1/notes/{note_id}` -> status 200, zwraca `NoteResponse`. Jeśli nie istnieje, rzuca HTTP 404.
+*   `DELETE /api/v1/notes/{note_id}` -> status 200, zwraca wiadomość o usunięciu. Jeśli nie istnieje, rzuca HTTP 404.
+*   *Obsługa błędów*: Zgłoszenie 404 zwraca spójną strukturę błędu (`error_code: "NOTE_NOT_FOUND"`, `message` oraz dynamicznie generowany `trace_id`), analogiczną do obsługi błędów uwierzytelniania.
 
 ### [MODIFY] `src/main.py`
-- **Logika:** Rejestracja chronionego routera / endpointu `GET /api/v1/notes`. Będzie to Proof of Concept udowadniający, że dostęp mają tylko zautoryzowani użytkownicy (lub zamockowani w testach).
+*   Dołączenie routera `notes_router` do głównej aplikacji FastAPI (`app.include_router(notes_router)`).
+*   Usunięcie tymczasowego, testowego endpointu `GET /api/v1/notes` z Kroku 2, ponieważ zostanie on zastąpiony pełnym routerem w `src/routers/notes.py`.
 
-### [MODIFY] `requirements.txt`
-- **Logika:** Dodanie pakietów: `pytest`, `httpx` (konieczne dla frameworku testowego FastAPI).
-
-### [NEW] `tests/test_auth.py`
-- **Logika:** Założenie środowiska testowego z dwoma scenariuszami. Do zablokowania rzeczywistej walidacji po stronie serwerów Google posłuży `unittest.mock.patch`.
-  - **Scenariusz 1:** Brak tokenu w zapytaniu do `/api/v1/notes` - oczekiwany zwrot i poprawna obsługa błędu 401.
-  - **Scenariusz 2:** Zmockowany poprawny token JWT - oczekiwany zwrot 200 wraz ze słownikiem reprezentującym dane zaufanego użytkownika.
-
-## Strategia Weryfikacji
-
-Aby zweryfikować kod zgodnie ze Standaryzacją Środowiska (bez uruchamiania tego na maszynie dewelopera fizycznie, lecz w izolowanym kontenerze backendu), testy zostaną uruchomione poleceniem:
-```bash
-docker-compose run --rm backend bash -c "pip install -r requirements.txt && pytest tests/"
-```
-*Uwaga: Właściwym rozwiązaniem w przyszłości będzie rozdzielenie zależności na dev/prod, jednak na ten moment zainstalujemy pakiety z zaktualizowanego `requirements.txt`.*
-
-## Koszty
-Rozwój modułu Firebase Authentication w pakiecie bazowym oraz operacje mockowane nie generują żadnych bezpośrednich kosztów użycia chmury obliczeniowej GCP/Firebase. Koszt uruchomienia na etapie dev: 0 PLN.
+### [NEW] `tests/test_notes.py`
+Testy jednostkowe weryfikujące poprawność operacji oraz obsługę błędów:
+*   Mockowanie Firebase Auth (zwracanie poprawnego tokena/testowego UID w `verify_id_token`).
+*   Mockowanie klienta Firestore (metody `collection`, `document`, `get`, `set`, `update`, `delete`, `stream`) przy użyciu `unittest.mock.MagicMock`, aby testy były całkowicie offline.
+*   Testy dla wszystkich endpointów (sukces oraz obsługa błędów 404 ze strukturą Trace ID).
 
 ---
-**TWARDY STOP (Halt)** 
-Oczekuję na weryfikację ze strony Architekta. W przypadku pomyślnej walidacji i braku uwag w zakresie wzorców/bezpieczeństwa, proszę o komendę **"Dalej"**.
+
+## Strategia Weryfikacji i Certyfikacja Testami
+
+Wszystkie testy zostaną uruchomione wewnątrz izolowanego kontenera backendu, aby zagwarantować spójność środowiska:
+```bash
+docker-compose run --rm backend bash -c "pytest tests/"
+```
+
+Scenariusze testowe w `tests/test_notes.py`:
+1.  **Dodawanie notatki (POST)**: Weryfikacja kodu 201 i zgodności struktury odpowiedzi z `NoteResponse`.
+2.  **Pobieranie listy notatek (GET /api/v1/notes)**: Sprawdzenie, czy zwracane dane są poprawnie mapowane na listę modeli.
+3.  **Pobieranie pojedynczej notatki (GET /api/v1/notes/{note_id})**:
+    *   Wariant sukces (200) z poprawnym mockiem.
+    *   Wariant błąd (404) z weryfikacją obecności `trace_id` i `error_code: "NOTE_NOT_FOUND"`.
+4.  **Aktualizacja notatki (PUT)**:
+    *   Wariant sukces (200) z przekazaniem nowych wartości pól.
+    *   Wariant błąd (404) dla nieistniejącego ID.
+5.  **Usuwanie notatki (DELETE)**:
+    *   Wariant sukces (200).
+    *   Wariant błąd (404) dla nieistniejącego ID.
+
+## Koszty
+Operacje na bazie danych Firestore są w pełni mockowane, co eliminuje ryzyko naliczenia opłat w chmurze Google Cloud. Koszt testów: 0 PLN.
+
+---
+**TWARDY STOP (Halt)**
+Oczekuję na weryfikację planu ze strony Architekta. Po zatwierdzeniu planu proszę o komendę **"Dalej"**, aby przejść do implementacji.
