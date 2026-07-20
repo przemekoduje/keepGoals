@@ -5,10 +5,25 @@ import type { Note } from "../services/api";
 import { Modal } from "../components/Modal";
 import { CreateGoalForm } from "../components/CreateGoalForm";
 import { EveningReflectionForm } from "../components/EveningReflectionForm";
+import { MarkdownRenderer } from "../components/MarkdownRenderer";
 
 export const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [notes, setNotes] = useState<Note[]>([]);
+
+  const formatNoteDate = (dateStr: string): string => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("pl-PL", {
+        day: "numeric",
+        month: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  };
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -179,18 +194,18 @@ export const Dashboard: React.FC = () => {
                   {strategicNotes.map((note) => (
                     <div
                       key={note.id}
-                      className={`p-6 rounded-[24px] border shadow-sm ${getNoteTypeStyles(note.note_type)}`}
+                      className={`p-6 md:p-8 rounded-[24px] border shadow-sm ${getNoteTypeStyles(note.note_type)}`}
                     >
-                      <div className="flex justify-between items-start mb-3">
+                      <div className="flex justify-between items-start mb-4">
                         <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 bg-white/60 dark:bg-slate-950/20 rounded-full">
                           {formatTypeLabel(note.note_type)}
                         </span>
                         <span className="text-xs text-slate-400 font-medium">
-                          {new Date(note.created_at).toLocaleDateString()}
+                          {formatNoteDate(note.created_at)}
                         </span>
                       </div>
-                      {note.title && <h3 className="text-lg font-bold mb-2">{note.title}</h3>}
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{note.content}</p>
+                      {note.title && <h3 className="text-lg font-bold mb-3">{note.title}</h3>}
+                      <MarkdownRenderer content={note.content} />
                     </div>
                   ))}
                 </div>
@@ -261,18 +276,18 @@ export const Dashboard: React.FC = () => {
                   {dailyNotes.map((note) => (
                     <div
                       key={note.id}
-                      className={`p-6 rounded-[24px] border shadow-sm ${getNoteTypeStyles(note.note_type)}`}
+                      className={`p-6 md:p-8 rounded-[24px] border shadow-sm ${getNoteTypeStyles(note.note_type)}`}
                     >
-                      <div className="flex justify-between items-start mb-3">
+                      <div className="flex justify-between items-start mb-4">
                         <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 bg-white/60 dark:bg-slate-950/20 rounded-full">
                           {formatTypeLabel(note.note_type)}
                         </span>
                         <span className="text-xs text-slate-400 font-medium">
-                          {new Date(note.created_at).toLocaleDateString()}
+                          {formatNoteDate(note.created_at)}
                         </span>
                       </div>
-                      {note.title && <h3 className="text-lg font-bold mb-2">{note.title}</h3>}
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{note.content}</p>
+                      {note.title && <h3 className="text-lg font-bold mb-3">{note.title}</h3>}
+                      <MarkdownRenderer content={note.content} />
                     </div>
                   ))}
                 </div>

@@ -1,28 +1,24 @@
-# Plan Kroku 11: Integracja Silnika AI na Interfejsie (React + Vite)
+# Plan Kroku 12: Renderowanie Markdown (react-markdown, remark-gfm) oraz Szlif Wizualny (React + Vite)
 
-**Cel:** Rozbudowa klienta API o nowe metody obsługujące generowanie planów porannych i refleksji wieczornych przez AI, wdrożenie odpowiednich elementów interfejsu (dyskusyjne przyciski w sekcji Pętli Dziennej), utworzenie nowego formularza wieczornego bilansu wewnątrz okna modalnego z konwersją wielowierszowego tekstu do struktur DTO (listy stringów), oraz obsługa błędów autoryzacji/braku celów strategicznych (`NO_STRATEGIC_GOALS`).
+**Cel:** Wdrożenie biblioteki renderującej Markdown (`react-markdown` wraz z rozszerzeniem `remark-gfm` dla list zadań) na frontendzie, stworzenie dedykowanego komponentu do stylizacji planów porannych i wieczornych, zastąpienie surowego tekstu sformatowaną treścią wewnątrz kafelków, oraz uproszczenie wyświetlania dat na bardziej naturalne i czytelne (np. "20 lipca, 22:43").
 
 ## Pliki do utworzenia i modyfikacji
 
-### [NEW] `frontend/src/components/EveningReflectionForm.tsx`
-Formularz wieczornej refleksji użytkownika:
-*   Trzy pola tekstowe (`textarea`) do wprowadzania: zrealizowanych zadań, niezrealizowanych zadań oraz zaniechanych nawyków.
-*   Estetyka: brak grubych obramowań inputów, ujednolicone tło `bg-slate-50 dark:bg-slate-800` ulegające przyciemnieniu na focus (`focus:bg-slate-100/80`), wygaszanie przycisku zapisu gdy formularz jest w całości pusty.
-*   Logika: rozbijanie tekstu z pól tekstowych po znakach nowej linii (`\n`), oczyszczanie linii z białych znaków (`trim()`) i odrzucanie pustych linii w celu utworzenia tablicy stringów (zgodnie z DTO backendu).
-*   Wywołanie API metody `generateEveningReflection(payload)` i powiadomienie Dashboardu o sukcesie (`onSuccess`).
+### [NEW] `frontend/src/components/MarkdownRenderer.tsx`
+Dedykowany komponent renderujący i stylizujący Markdown:
+*   Import `react-markdown` oraz wtyczki `remark-gfm`.
+*   Nadpisanie domyślnych stylów HTML za pomocą Tailwind CSS:
+    *   Nagłówki (`h1`, `h2`, `h3`): `font-bold tracking-tight mt-4 mb-2` z ciemnym/jasnym kontrastem.
+    *   Tekst pogrubiony (`strong`): podwyższenie wagi do `font-extrabold` dla szybkiej czytelności.
+    *   Listy zadań (`input[type="checkbox"]`): ukrycie domyślnego systemowego stylu na rzecz niestandardowego, zaokrąglonego checkboxa (`rounded-[6px]`), pasującego do stylizacji pastelowych kafelków.
 
-### [MODIFY] `frontend/src/services/api.ts`
-*   Dodanie funkcji `generateMorningPlan()`: wysyła pusty POST na `/api/v1/plans/morning` z nagłówkiem autoryzacji Bearer.
-*   Dodanie funkcji `generateEveningReflection(reflectionData)`: wysyła POST na `/api/v1/plans/evening` z obiektem JSON i nagłówkiem autoryzacji.
-*   Obsługa błędów: wyciąganie błędu z pola `error_code` w przypadku odpowiedzi innej niż 2xx (np. `NO_STRATEGIC_GOALS`).
+### [MODIFY] `frontend/package.json`
+*   Dodanie zależności `react-markdown` oraz `remark-gfm` do `dependencies`.
 
 ### [MODIFY] `frontend/src/pages/Dashboard.tsx`
-*   Stany: `isMorningLoading: boolean`, `morningError: string | null`, `isEveningModalOpen: boolean`.
-*   Dodanie przycisków w sekcji nagłówka "Pętla Dzienna (Plany i Refleksje)":
-    *   **Plan Poranny** (pastelowy zielony z ikoną słońca/odświeżania): wyzwala asynchroniczne zapytanie generujące i pokazuje spinner wewnątrz przycisku w czasie oczekiwania.
-    *   **Bilans** (pastelowy fioletowy z ikoną księżyca): otwiera modal wieczornej refleksji.
-*   Wyświetlanie dyskretnego baneru ostrzeżenia w przypadku błędu `NO_STRATEGIC_GOALS` (brak celów strategicznych blokujący generowanie z użyciem AI).
-*   Integracja nowego modala wieczornej refleksji z formularzem `EveningReflectionForm`.
+*   Zastąpienie surowego pola tekstowego `{note.content}` wywołaniem `<MarkdownRenderer content={note.content} />` w kafelkach.
+*   Dodanie funkcji pomocniczej `formatNoteDate(dateStr: string): string` konwertującej daty ISO (np. `2026-07-20T22:43:00Z`) na naturalny język polski (np. `20 lipca, 22:43`), co eliminuje techniczny szum.
+*   Weryfikacja wewnętrznych marginesów kafelków `rounded-[24px]` w celu zapewnienia odpowiedniej przestrzeni oddechowej dla sformatowanego tekstu Markdown.
 
 ---
 
@@ -34,21 +30,17 @@ Zgodnie z zasadą Standaryzacji Środowiska, wszystkie działania uruchomieniowe
     ```bash
     docker-compose up --build -d
     ```
-2.  **Test błędu braku celów strategicznych**:
-    *   Zalogowanie na nowego użytkownika (który nie ma jeszcze żadnych celów).
-    *   Kliknięcie "Plan Poranny" lub wysłanie formularza "Bilans".
-    *   Weryfikacja pojawienia się w interfejsie jasnego, czytelnego komunikatu informującego o konieczności wcześniejszego dodania celów strategicznych (sprawdzenie przechwycenia błędu `NO_STRATEGIC_GOALS`).
-3.  **Test udanego generowania AI**:
-    *   Dodanie celu strategicznego.
-    *   Kliknięcie "Plan Poranny" -> weryfikacja pojawienia się nowego planu w sekcji pętli dziennej.
-    *   Wysłanie wieczornego bilansu -> weryfikacja pojawienia się wygenerowanej refleksji mentora.
+2.  **Test renderowania Markdown**:
+    *   Weryfikacja, czy plany poranne (check-listy z `- [ ]`) są renderowane jako ładne, interaktywne lub zablokowane checkboxy z zaokrąglonymi rogami, a nie surowy tekst `- [ ]`.
+    *   Sprawdzenie, czy nagłówki i pogrubienia są czytelne i prawidłowo ostylowane.
+3.  **Wizualny test dat**: Sprawdzenie, czy daty notatek wyświetlają się w przyjaznym formacie.
 4.  **Testy regresji backendowej**:
     ```bash
     docker-compose run --rm backend bash -c "pytest tests/"
     ```
 
 ## Koszty
-Integracja z API Gemini wiąże się z opłatami za tokeny wejściowe i wyjściowe w modelu pay-as-you-go, jednak w fazie deweloperskiej model `gemini-2.5-flash` posiada bezpłatny pakiet próbny (free tier). Koszt testów offline: 0 PLN.
+Brak dodatkowych kosztów integracji. Koszt testów offline: 0 PLN.
 
 ---
 **TWARDY STOP (Halt)**
