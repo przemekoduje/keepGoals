@@ -1,29 +1,28 @@
-# Plan Kroku 10: Formularz i Modal Dodawania Celów (React + Vite)
+# Plan Kroku 11: Integracja Silnika AI na Interfejsie (React + Vite)
 
-**Cel:** Rozbudowa klienta HTTP o metodę `POST` pozwalającą na tworzenie notatek celów, utworzenie uniwersalnego komponentu modalnego z efektem rozmycia tła (`backdrop-blur`), implementacja formularza tworzenia celi strategicznych o zredukowanych ramkach pól wejściowych, oraz spięcie logiki odświeżania danych na Dashboardzie bez pełnego przeładowania strony (Single Page Application UX).
+**Cel:** Rozbudowa klienta API o nowe metody obsługujące generowanie planów porannych i refleksji wieczornych przez AI, wdrożenie odpowiednich elementów interfejsu (dyskusyjne przyciski w sekcji Pętli Dziennej), utworzenie nowego formularza wieczornego bilansu wewnątrz okna modalnego z konwersją wielowierszowego tekstu do struktur DTO (listy stringów), oraz obsługa błędów autoryzacji/braku celów strategicznych (`NO_STRATEGIC_GOALS`).
 
 ## Pliki do utworzenia i modyfikacji
 
-### [NEW] `frontend/src/components/Modal.tsx`
-Generyczny, reużywalny kontener modalny:
-*   Tło przesłaniające o pełnym wymiarze z lekkim przyciemnieniem i rozmyciem: `fixed inset-0 z-50 bg-slate-900/20 backdrop-blur-sm`.
-*   Pudełko zawartości z zaokrąglonymi narożnikami `rounded-[24px]` dostosowane do trybu ciemnego/jasnego.
-*   Zamknięcie modala po kliknięciu w tło (Backdrop) lub ikonę krzyżyka.
-
-### [NEW] `frontend/src/components/CreateGoalForm.tsx`
-Formularz dodawania celu strategicznego:
-*   Pola wejściowe `title` (tytuł celu) oraz `content` (opis).
-*   Estetyka: brak grubych obramowań inputów, ujednolicone tło `bg-slate-50 dark:bg-slate-800` ulegające przyciemnieniu na focus (`focus:bg-slate-100/80`).
-*   Brak widocznego ringu (`focus:ring-0 focus:outline-none`).
-*   Blokowanie przycisku "Zapisz cel", gdy pola są puste (zmiana koloru na szary, wygaszony).
+### [NEW] `frontend/src/components/EveningReflectionForm.tsx`
+Formularz wieczornej refleksji użytkownika:
+*   Trzy pola tekstowe (`textarea`) do wprowadzania: zrealizowanych zadań, niezrealizowanych zadań oraz zaniechanych nawyków.
+*   Estetyka: brak grubych obramowań inputów, ujednolicone tło `bg-slate-50 dark:bg-slate-800` ulegające przyciemnieniu na focus (`focus:bg-slate-100/80`), wygaszanie przycisku zapisu gdy formularz jest w całości pusty.
+*   Logika: rozbijanie tekstu z pól tekstowych po znakach nowej linii (`\n`), oczyszczanie linii z białych znaków (`trim()`) i odrzucanie pustych linii w celu utworzenia tablicy stringów (zgodnie z DTO backendu).
+*   Wywołanie API metody `generateEveningReflection(payload)` i powiadomienie Dashboardu o sukcesie (`onSuccess`).
 
 ### [MODIFY] `frontend/src/services/api.ts`
-*   Dodanie asynchronicznej funkcji `createNote(noteData: { title: string, content: string, note_type: string })` wysyłającej zapytanie `POST` z nagłówkiem `Authorization: Bearer <TOKEN>` i typem danych JSON.
+*   Dodanie funkcji `generateMorningPlan()`: wysyła pusty POST na `/api/v1/plans/morning` z nagłówkiem autoryzacji Bearer.
+*   Dodanie funkcji `generateEveningReflection(reflectionData)`: wysyła POST na `/api/v1/plans/evening` z obiektem JSON i nagłówkiem autoryzacji.
+*   Obsługa błędów: wyciąganie błędu z pola `error_code` w przypadku odpowiedzi innej niż 2xx (np. `NO_STRATEGIC_GOALS`).
 
 ### [MODIFY] `frontend/src/pages/Dashboard.tsx`
-*   Zarządzanie stanem otwarcia modala (`isModalOpen: boolean`).
-*   Dodanie minimalistycznego okrągłego/kwadratowego przycisku z ikoną plusa obok nagłówka "Cele Strategiczne".
-*   Implementacja callbacku `handleCreateSuccess()`, który zamyka modal i ponownie wywołuje `fetchNotes()`, wymuszając reaktywne odświeżenie samej tablicy (SPA UX).
+*   Stany: `isMorningLoading: boolean`, `morningError: string | null`, `isEveningModalOpen: boolean`.
+*   Dodanie przycisków w sekcji nagłówka "Pętla Dzienna (Plany i Refleksje)":
+    *   **Plan Poranny** (pastelowy zielony z ikoną słońca/odświeżania): wyzwala asynchroniczne zapytanie generujące i pokazuje spinner wewnątrz przycisku w czasie oczekiwania.
+    *   **Bilans** (pastelowy fioletowy z ikoną księżyca): otwiera modal wieczornej refleksji.
+*   Wyświetlanie dyskretnego baneru ostrzeżenia w przypadku błędu `NO_STRATEGIC_GOALS` (brak celów strategicznych blokujący generowanie z użyciem AI).
+*   Integracja nowego modala wieczornej refleksji z formularzem `EveningReflectionForm`.
 
 ---
 
@@ -35,21 +34,21 @@ Zgodnie z zasadą Standaryzacji Środowiska, wszystkie działania uruchomieniowe
     ```bash
     docker-compose up --build -d
     ```
-2.  **Test zachowania UI (Modal i Formularz)**:
-    *   Kliknięcie ikony "+" w sekcji celów otwiera modal.
-    *   Kliknięcie poza modalem lub na przycisk "Anuluj" zamyka okno.
-    *   Próba zapisu przy pustych polach jest niemożliwa (przycisk wygaszony).
-3.  **Weryfikacja CORS i zapisu (E2E Manual / Logs)**:
-    *   Wpisanie przykładowych wartości i kliknięcie "Zapisz cel".
-    *   Sprawdzenie w konsoli sieciowej przeglądarki, czy poszło zapytanie `POST /api/v1/notes` ze statusem `201 Created` lub `200 OK`.
-    *   Sprawdzenie, czy nowa notatka natychmiast pojawia się na ekranie bez przeładowywania strony.
+2.  **Test błędu braku celów strategicznych**:
+    *   Zalogowanie na nowego użytkownika (który nie ma jeszcze żadnych celów).
+    *   Kliknięcie "Plan Poranny" lub wysłanie formularza "Bilans".
+    *   Weryfikacja pojawienia się w interfejsie jasnego, czytelnego komunikatu informującego o konieczności wcześniejszego dodania celów strategicznych (sprawdzenie przechwycenia błędu `NO_STRATEGIC_GOALS`).
+3.  **Test udanego generowania AI**:
+    *   Dodanie celu strategicznego.
+    *   Kliknięcie "Plan Poranny" -> weryfikacja pojawienia się nowego planu w sekcji pętli dziennej.
+    *   Wysłanie wieczornego bilansu -> weryfikacja pojawienia się wygenerowanej refleksji mentora.
 4.  **Testy regresji backendowej**:
     ```bash
     docker-compose run --rm backend bash -c "pytest tests/"
     ```
 
 ## Koszty
-Brak dodatkowych kosztów. Koszt testów offline: 0 PLN.
+Integracja z API Gemini wiąże się z opłatami za tokeny wejściowe i wyjściowe w modelu pay-as-you-go, jednak w fazie deweloperskiej model `gemini-2.5-flash` posiada bezpłatny pakiet próbny (free tier). Koszt testów offline: 0 PLN.
 
 ---
 **TWARDY STOP (Halt)**

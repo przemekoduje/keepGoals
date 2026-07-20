@@ -53,3 +53,38 @@ export async function createNote(noteData: { title: string; content: string; not
 
   return response.json();
 }
+
+export async function generateMorningPlan(): Promise<Note> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/plans/morning`, {
+    method: "POST",
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error_code || `Błąd generowania planu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function generateEveningReflection(reflectionData: {
+  completed_tasks: string[];
+  uncompleted_tasks: string[];
+  avoided_habits: string[];
+}): Promise<Note> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/plans/evening`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(reflectionData),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error_code || `Błąd generowania refleksji: ${response.status}`);
+  }
+
+  return response.json();
+}

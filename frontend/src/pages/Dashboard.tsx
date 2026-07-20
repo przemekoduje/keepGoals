@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { fetchNotes } from "../services/api";
+import { fetchNotes, generateMorningPlan } from "../services/api";
 import type { Note } from "../services/api";
 import { Modal } from "../components/Modal";
 import { CreateGoalForm } from "../components/CreateGoalForm";
+import { EveningReflectionForm } from "../components/EveningReflectionForm";
 
 export const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -11,6 +12,9 @@ export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isEveningModalOpen, setIsEveningModalOpen] = useState<boolean>(false);
+  const [isMorningLoading, setIsMorningLoading] = useState<boolean>(false);
+  const [morningError, setMorningError] = useState<string | null>(null);
 
   const loadNotes = () => {
     setLoading(true);
@@ -33,6 +37,29 @@ export const Dashboard: React.FC = () => {
   const handleCreateSuccess = () => {
     setIsModalOpen(false);
     loadNotes();
+  };
+
+  const handleEveningSuccess = () => {
+    setIsEveningModalOpen(false);
+    loadNotes();
+  };
+
+  const handleGenerateMorning = async () => {
+    setIsMorningLoading(true);
+    setMorningError(null);
+    try {
+      await generateMorningPlan();
+      loadNotes();
+    } catch (err: any) {
+      console.error(err);
+      if (err.message === "NO_STRATEGIC_GOALS") {
+        setMorningError("Brak celów strategicznych! Aby wygenerować plan poranny, najpierw utwórz cel strategiczny.");
+      } else {
+        setMorningError("Wystąpił błąd podczas generowania planu porannego.");
+      }
+    } finally {
+      setIsMorningLoading(false);
+    }
   };
 
   const strategicNotes = notes.filter((n) => n.note_type === "strategic");
@@ -172,10 +199,59 @@ export const Dashboard: React.FC = () => {
 
             {/* Kolumna 2: Pętla Dzienna */}
             <section className="space-y-6">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white flex items-center space-x-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-900 dark:bg-slate-100" />
-                <span>Pętla Dzienna (Plany i Refleksje)</span>
-              </h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white flex items-center space-x-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-900 dark:bg-slate-100" />
+                  <span>Pętla Dzienna (Plany i Refleksje)</span>
+                </h2>
+                
+                <div className="flex items-center space-x-2">
+                  {/* Wygeneruj Plan Poranny Button */}
+                  <button
+                    onClick={handleGenerateMorning}
+                    disabled={isMorningLoading}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 flex items-center space-x-2 shadow-sm ${
+                      isMorningLoading
+                        ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                        : "bg-pastel-green-light hover:bg-pastel-green-light/80 text-pastel-green-dark border border-pastel-green-light/40"
+                    }`}
+                    title="Generuj Plan Poranny z AI"
+                  >
+                    {isMorningLoading ? (
+                      <span className="animate-spin h-3.5 w-3.5 border-2 border-slate-400 border-t-transparent rounded-full" />
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+                      </svg>
+                    )}
+                    <span>Plan Poranny</span>
+                  </button>
+
+                  {/* Wieczorny Bilans Button */}
+                  <button
+                    onClick={() => setIsEveningModalOpen(true)}
+                    className="px-3 py-2 bg-pastel-purple-light hover:bg-pastel-purple-light/80 text-pastel-purple-dark border border-pastel-purple-light/40 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-sm transition-all duration-200"
+                    title="Wieczorny Bilans AI"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
+                    </svg>
+                    <span>Bilans</span>
+                  </button>
+                </div>
+              </div>
+
+              {morningError && (
+                <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl p-4 text-xs text-rose-600 dark:text-rose-400 font-semibold flex items-center justify-between">
+                  <span>{morningError}</span>
+                  <button onClick={() => setMorningError(null)} className="text-rose-400 hover:text-rose-600 dark:hover:text-rose-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
               {dailyNotes.length === 0 ? (
                 <div className="bg-white dark:bg-slate-800 rounded-[24px] p-8 border border-slate-100 dark:border-slate-700 text-center text-slate-400 dark:text-slate-500">
                   Brak planów i refleksji.
@@ -209,6 +285,11 @@ export const Dashboard: React.FC = () => {
       {/* Modal dodawania celu */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Dodaj Cel Strategiczny">
         <CreateGoalForm onSuccess={handleCreateSuccess} onCancel={() => setIsModalOpen(false)} />
+      </Modal>
+
+      {/* Modal wieczornego bilansu */}
+      <Modal isOpen={isEveningModalOpen} onClose={() => setIsEveningModalOpen(false)} title="Wieczorny Bilans AI">
+        <EveningReflectionForm onSuccess={handleEveningSuccess} onCancel={() => setIsEveningModalOpen(false)} />
       </Modal>
     </div>
   );
