@@ -1,74 +1,52 @@
-# Plan Kroku 3: Implementacja Modeli Pydantic, Warstwy CRUD oraz Endpointów Zarządzania Notatkami w Firestore
+# Plan Kroku 4: Integracja SDK Gemini (AI Service) i Generowanie Planów Porannych
 
-**Cel:** Wdrożenie pełnego cyklu zarządzania notatkami (CRUD: Create, Read, Update, Delete) w architekturze FastAPI + Firestore z autoryzacją Firebase. Plan zakłada pełną izolację danych użytkownika poprzez zapis w subkolekcji `users/{uid}/notes` (Security by Default), walidację danych przy użyciu Pydantic oraz certyfikację testami jednostkowymi z mockowaniem bazy i autoryzacji.
+**Cel:** Wdrożenie integracji z modelami Gemini za pomocą nowej biblioteki `google-genai` oraz stworzenie punktu końcowego `POST /api/v1/plans/morning`. Endpoint ten pobierze cele strategiczne zalogowanego użytkownika, wygeneruje dla nich spersonalizowaną listę zadań przy użyciu AI, a następnie asynchronicznie zapisze wynik jako nową notatkę o typie `daily_morning` w Firestore.
 
 ## Pliki do utworzenia i modyfikacji
 
-### [NEW] `src/schemas.py`
-Definicja modeli Pydantic do walidacji danych wejściowych i wyjściowych (DTO):
-*   `NoteBase`: Wspólne pola dla notatki:
-    *   `title`: `Optional[str]` (domyślnie `None`)
-    *   `content`: `str` (wymagane)
-    *   `note_type`: `str` (np. `'strategic'`, `'daily_morning'`, `'daily_evening'`)
-*   `NoteCreate`: Dziedziczy po `NoteBase`. Reprezentuje dane przesyłane przy tworzeniu notatki.
-*   `NoteUpdate`: Wszystkie pola z `NoteBase` oznaczone jako opcjonalne (`Optional`), co umożliwia częściową aktualizację (PATCH/PUT).
-*   `NoteResponse`: Dziedziczy po `NoteBase`. Reprezentuje pełną notatkę zwracaną z API, rozszerzoną o:
-    *   `id`: `str` (identyfikator dokumentu z Firestore)
-    *   `user_id`: `str` (identyfikator właściciela notatki `uid`)
-    *   `created_at`: `datetime` (czas utworzenia)
+### [NEW] `src/services/ai_service.py`
+Serwis odpowiedzialny za komunikację z modelami Gemini:
+*   Inicjalizacja `client = genai.Client(api_key=settings.GEMINI_API_KEY)` z modułu `google-genai`.
+*   Funkcja `generate_morning_plan(strategic_goals: list[str]) -> str`:
+    *   Wstrzykuje listę celów użytkownika w predefiniowany prompt systemowy.
+    *   System prompt instruuje model Gemini (np. `gemini-2.5-flash`), aby działał jako asystent produktywności i zwrócił listę zadań (checklistę z `- [ ]`) w formacie czystego Markdown, bez dodatkowych komentarzy.
 
-### [NEW] `src/crud.py`
-Funkcje pomocnicze do bezpośredniej komunikacji z Firestore, realizujące izolację danych użytkownika w subkolekcji `users/{uid}/notes`:
-*   `create_note(db, uid: str, note_in: NoteCreate) -> dict`: Zapisuje nową notatkę z automatycznym przypisaniem `user_id` oraz `created_at` (zapisywanym jako standardowy timestamp/datetime). Zwraca zapisany słownik z wygenerowanym ID dokumentu.
-*   `get_notes(db, uid: str) -> list[dict]`: Pobiera wszystkie notatki użytkownika (strumieniowanie z subkolekcji).
-*   `get_note(db, uid: str, note_id: str) -> Optional[dict]`: Pobiera pojedynczą notatkę na podstawie ID dokumentu. Zwraca `None`, jeśli dokument nie istnieje.
-*   `update_note(db, uid: str, note_id: str, note_in: NoteUpdate) -> Optional[dict]`: Aktualizuje pola notatki. Jeśli notatka nie istnieje, zwraca `None`. W przeciwnym razie pobiera zaktualizowany dokument i zwraca jego strukturę.
-*   `delete_note(db, uid: str, note_id: str) -> bool`: Usuwa dokument notatki. Zwraca `True` przy sukcesie, a `False`, gdy notatka nie istnieje.
-
-### [NEW] `src/routers/notes.py`
-Modularny router FastAPI obsługujący operacje na notatkach:
-*   `POST /api/v1/notes` -> status 201 (Created), zwraca `NoteResponse`.
-*   `GET /api/v1/notes` -> status 200, zwraca listę `List[NoteResponse]`.
-*   `GET /api/v1/notes/{note_id}` -> status 200, zwraca `NoteResponse`. Jeśli nie istnieje, rzuca HTTP 404.
-*   `PUT /api/v1/notes/{note_id}` -> status 200, zwraca `NoteResponse`. Jeśli nie istnieje, rzuca HTTP 404.
-*   `DELETE /api/v1/notes/{note_id}` -> status 200, zwraca wiadomość o usunięciu. Jeśli nie istnieje, rzuca HTTP 404.
-*   *Obsługa błędów*: Zgłoszenie 404 zwraca spójną strukturę błędu (`error_code: "NOTE_NOT_FOUND"`, `message` oraz dynamicznie generowany `trace_id`), analogiczną do obsługi błędów uwierzytelniania.
+### [NEW] `src/routers/plans.py`
+Router FastAPI obsługujący orkiestrację planów dnia:
+*   `POST /api/v1/plans/morning` -> status 201 (Created), zwraca `NoteResponse`.
+*   **Logika endpointu:**
+    1.  Autoryzacja za pomocą `Depends(verify_token)`.
+    2.  Pobranie wszystkich notatek użytkownika z Firestore (`crud.get_notes`).
+    3.  Filtrowanie i wyekstrahowanie treści notatek o typie `strategic`.
+    4.  *Walidacja (Security/Logic)*: Jeśli lista celów strategicznych jest pusta, operacja zostaje przerwana z kodem błędu HTTP 400 (`NO_STRATEGIC_GOALS`), czytelnym komunikatem i unikalnym `trace_id`.
+    5.  Wywołanie `generate_morning_plan` z celami strategicznymi jako argumentem.
+    6.  Utworzenie nowej notatki z wygenerowanym tekstem, przypisaniem tytułu `"Plan Poranny"` i typu `"daily_morning"`.
+    7.  Zapisanie nowej notatki za pomocą `crud.create_note` i zwrócenie struktury `NoteResponse`.
 
 ### [MODIFY] `src/main.py`
-*   Dołączenie routera `notes_router` do głównej aplikacji FastAPI (`app.include_router(notes_router)`).
-*   Usunięcie tymczasowego, testowego endpointu `GET /api/v1/notes` z Kroku 2, ponieważ zostanie on zastąpiony pełnym routerem w `src/routers/notes.py`.
+*   Podłączenie nowego routera plans: `app.include_router(plans_router)`.
 
-### [NEW] `tests/test_notes.py`
-Testy jednostkowe weryfikujące poprawność operacji oraz obsługę błędów:
-*   Mockowanie Firebase Auth (zwracanie poprawnego tokena/testowego UID w `verify_id_token`).
-*   Mockowanie klienta Firestore (metody `collection`, `document`, `get`, `set`, `update`, `delete`, `stream`) przy użyciu `unittest.mock.MagicMock`, aby testy były całkowicie offline.
-*   Testy dla wszystkich endpointów (sukces oraz obsługa błędów 404 ze strukturą Trace ID).
+### [NEW] `tests/test_plans.py`
+Testy jednostkowe weryfikujące logikę orkiestracji planów w izolacji:
+*   Mockowanie uwierzytelniania FastAPI i bazy danych `get_db`.
+*   Mockowanie komunikacji z API Gemini (`generate_morning_plan` w `src.routers.plans`) oraz komunikacji z Firestore (`get_notes`, `create_note` w `src.routers.plans`), zapewniające wykonanie testów w trybie całkowicie offline.
+*   **Scenariusz 1 (Sukces)**: Zwrócenie 201, poprawne mapowanie wygenerowanego planu na typ `daily_morning` o tytule "Plan Poranny".
+*   **Scenariusz 2 (Błąd)**: Brak celów strategicznych w bazie powoduje HTTP 400 z unikalnym `trace_id` i kodem `NO_STRATEGIC_GOALS`.
 
 ---
 
 ## Strategia Weryfikacji i Certyfikacja Testami
 
-Wszystkie testy zostaną uruchomione wewnątrz izolowanego kontenera backendu, aby zagwarantować spójność środowiska:
+Zgodnie ze Standaryzacją Środowiska, wszystkie testy zostaną uruchomione wewnątrz izolowanego kontenera backendu:
 ```bash
 docker-compose run --rm backend bash -c "pytest tests/"
 ```
 
-Scenariusze testowe w `tests/test_notes.py`:
-1.  **Dodawanie notatki (POST)**: Weryfikacja kodu 201 i zgodności struktury odpowiedzi z `NoteResponse`.
-2.  **Pobieranie listy notatek (GET /api/v1/notes)**: Sprawdzenie, czy zwracane dane są poprawnie mapowane na listę modeli.
-3.  **Pobieranie pojedynczej notatki (GET /api/v1/notes/{note_id})**:
-    *   Wariant sukces (200) z poprawnym mockiem.
-    *   Wariant błąd (404) z weryfikacją obecności `trace_id` i `error_code: "NOTE_NOT_FOUND"`.
-4.  **Aktualizacja notatki (PUT)**:
-    *   Wariant sukces (200) z przekazaniem nowych wartości pól.
-    *   Wariant błąd (404) dla nieistniejącego ID.
-5.  **Usuwanie notatki (DELETE)**:
-    *   Wariant sukces (200).
-    *   Wariant błąd (404) dla nieistniejącego ID.
+Wszystkie testy muszą zakończyć się sukcesem bez wykonywania jakichkolwiek zapytań sieciowych do API Google GenAI ani do chmury Google Cloud Firestore.
 
 ## Koszty
-Operacje na bazie danych Firestore są w pełni mockowane, co eliminuje ryzyko naliczenia opłat w chmurze Google Cloud. Koszt testów: 0 PLN.
+Integracja z API Gemini na poziomie produkcyjnym wykorzystuje model `gemini-2.5-flash`, który posiada darmowy limit zapytań lub bardzo niski koszt eksploatacyjny. Na etapie testów (dzięki mockom) generowane koszty wynoszą dokładnie 0 PLN.
 
 ---
 **TWARDY STOP (Halt)**
-Oczekuję na weryfikację planu ze strony Architekta. Po zatwierdzeniu planu proszę o komendę **"Dalej"**, aby przejść do implementacji.
+Oczekuję na weryfikację planu przez Architekta. Zatrzymanie modyfikacji kodu jest bezwzględne. Po pomyślnej walidacji i otrzymaniu autoryzacji proszę o komendę **"Dalej"**.
