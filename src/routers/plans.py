@@ -36,7 +36,7 @@ def generate_morning_plan_endpoint(
             }
         )
         
-    # 4. Generowanie planu przez Gemini
+    # 4. Generowanie planu przez OpenAI
     plan_content = generate_morning_plan(strategic_goals)
     
     # 5. Zapis planu w bazie jako notatka o typie daily_morning
@@ -78,7 +78,7 @@ def generate_evening_reflection_endpoint(
             }
         )
         
-    # 4. Generowanie podsumowania przez Gemini
+    # 4. Generowanie podsumowania przez OpenAI
     reflection_content = generate_evening_reflection(reflection_in.model_dump(), strategic_goals)
     
     # 5. Zapis refleksji w bazie jako notatka o typie daily_evening
