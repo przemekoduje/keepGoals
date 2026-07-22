@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone
 
 # Mockujemy inicjalizację bazy danych Firebase aby testy nie zgłaszały błędów braku certyfikatu
@@ -259,8 +259,8 @@ def test_upload_audio_note_success(mock_analyze_audio, mock_aiofiles, mock_verif
 
     # Mockowanie aiofiles async context managera
     mock_file = MagicMock()
-    mock_file.__aenter__.return_value = mock_file
-    mock_aiofiles.return_value = mock_file
+    mock_file.write = AsyncMock()
+    mock_aiofiles.return_value.__aenter__ = AsyncMock(return_value=mock_file)
 
     headers = {"Authorization": "Bearer valid_token"}
     files = {"file": ("audio.webm", b"fake-audio-bytes", "audio/webm")}
@@ -292,8 +292,8 @@ def test_upload_video_note_success(mock_analyze_video, mock_aiofiles, mock_verif
                   .document.return_value = mock_doc_ref
 
     mock_file = MagicMock()
-    mock_file.__aenter__.return_value = mock_file
-    mock_aiofiles.return_value = mock_file
+    mock_file.write = AsyncMock()
+    mock_aiofiles.return_value.__aenter__ = AsyncMock(return_value=mock_file)
 
     headers = {"Authorization": "Bearer valid_token"}
     files = {"file": ("video.webm", b"fake-video-bytes", "video/webm")}
