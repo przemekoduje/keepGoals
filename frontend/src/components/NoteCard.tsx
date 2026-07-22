@@ -29,6 +29,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   const isAudio = note.media_type?.startsWith("audio/");
   const isVideo = note.media_type?.startsWith("video/");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,15 +111,33 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         {/* Media Player */}
         {note.media_url && (
           <div className="mb-3 w-full overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
-            {isAudio && (
-              <audio controls className="w-full h-10 outline-none" src={`${API_URL}${note.media_url}`}>
-                Twoja przeglądarka nie obsługuje odtwarzacza audio.
-              </audio>
-            )}
-            {isVideo && (
-              <video controls className="w-full h-auto max-h-48 object-cover outline-none" src={`${API_URL}${note.media_url}`}>
-                Twoja przeglądarka nie obsługuje odtwarzacza wideo.
-              </video>
+            {mediaError ? (
+              <div className="p-3 text-[11px] text-slate-400 dark:text-slate-500 italic text-center">
+                Plik multimedialny zapisany na innym komputerze (niedostępny lokalnie).
+              </div>
+            ) : (
+              <>
+                {isAudio && (
+                  <audio 
+                    controls 
+                    className="w-full h-10 outline-none" 
+                    src={`${API_URL}${note.media_url}`}
+                    onError={() => setMediaError(true)}
+                  >
+                    Twoja przeglądarka nie obsługuje odtwarzacza audio.
+                  </audio>
+                )}
+                {isVideo && (
+                  <video 
+                    controls 
+                    className="w-full h-auto max-h-48 object-cover outline-none" 
+                    src={`${API_URL}${note.media_url}`}
+                    onError={() => setMediaError(true)}
+                  >
+                    Twoja przeglądarka nie obsługuje odtwarzacza wideo.
+                  </video>
+                )}
+              </>
             )}
           </div>
         )}

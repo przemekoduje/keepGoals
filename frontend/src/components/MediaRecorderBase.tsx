@@ -27,6 +27,14 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const targetMode = file.type.startsWith('video/') ? 'video' : 'audio';
+    await performUpload(file, targetMode);
+  };
 
   useEffect(() => {
     if (isOpenExternal !== undefined) {
@@ -237,19 +245,37 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
           </div>
 
           {recordState === 'inactive' && (
-            <div className="flex space-x-2">
+            <div className="flex flex-col space-y-2">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => { setMode('audio'); startRecording('audio'); }}
+                  className="flex-1 py-3 bg-pastel-purple-light hover:bg-pastel-purple-light/80 text-pastel-purple-dark rounded-xl text-sm font-bold transition-colors"
+                >
+                  Głos
+                </button>
+                <button
+                  onClick={() => { setMode('video'); startRecording('video'); }}
+                  className="flex-1 py-3 bg-pastel-blue-light hover:bg-pastel-blue-light/80 text-pastel-blue-dark rounded-xl text-sm font-bold transition-colors"
+                >
+                  Wideo
+                </button>
+              </div>
               <button
-                onClick={() => { setMode('audio'); startRecording('audio'); }}
-                className="flex-1 py-3 bg-pastel-purple-light hover:bg-pastel-purple-light/80 text-pastel-purple-dark rounded-xl text-sm font-bold transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center space-x-2"
               >
-                Głos
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 12 4.5M12 3v13.5" />
+                </svg>
+                <span>Wybierz plik z telefonu</span>
               </button>
-              <button
-                onClick={() => { setMode('video'); startRecording('video'); }}
-                className="flex-1 py-3 bg-pastel-blue-light hover:bg-pastel-blue-light/80 text-pastel-blue-dark rounded-xl text-sm font-bold transition-colors"
-              >
-                Wideo
-              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept="audio/*,video/*"
+                className="hidden"
+              />
             </div>
           )}
 
