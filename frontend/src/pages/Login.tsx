@@ -28,7 +28,11 @@ export const Login: React.FC = () => {
       navigate("/");
     } catch (err: any) {
       console.error(err);
-      setError(`Logowanie przez ${providerName} nie powiodło się. Wypróbuj e-mail lub zaloguj się ponownie.`);
+      if (err?.code === 'auth/configuration-not-found') {
+        setError("Usługa Firebase Authentication nie jest jeszcze włączona. Aktywuj ją w konsoli Firebase (Build -> Authentication -> Rozpocznij).");
+      } else {
+        setError(`Logowanie przez ${providerName} nie powiodło się. Wypróbuj e-mail lub zaloguj się ponownie.`);
+      }
     }
   };
 
@@ -63,12 +67,14 @@ export const Login: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       const code = err.code || "";
-      if (code === 'auth/weak-password') {
+      if (code === 'auth/configuration-not-found') {
+        setError("Usługa Firebase Authentication nie jest włączona w Twoim projekcie Firebase. Wejdź na console.firebase.google.com -> sekcja 'Authentication' -> kliknij 'Rozpocznij' i włącz metodę Email/Hasło.");
+      } else if (code === 'auth/weak-password') {
         setError("Hasło jest zbyt słabe (wymagane minimum 6 znaków).");
       } else if (code === 'auth/invalid-email') {
         setError("Niepoprawny format adresu e-mail.");
       } else if (code === 'auth/email-already-in-use') {
-        setError("Konto z tym adresem e-mail już istnieje. Zaloguj się.");
+        setError("Konto z tym adresem e-mail już istnieje. Przełącz na zakładkę 'Zaloguj się'.");
       } else if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         setError("Nieprawidłowy adres e-mail lub hasło.");
       } else {
