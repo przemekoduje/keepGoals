@@ -1,3 +1,7 @@
+import os
+import json
+import tempfile
+import subprocess
 from openai import OpenAI
 from src.config import settings
 
