@@ -242,10 +242,11 @@ def test_delete_note_not_found(mock_verify_token, mock_firestore):
 
 # ----------------- TESTY POST /api/v1/notes/audio i /video -----------------
 
-@patch("src.routers.notes.save_media_file")
+@patch("src.routers.notes.sync_media_to_cloud_bg")
+@patch("src.routers.notes.save_media_file_local")
 @patch("src.routers.notes.analyze_audio_note")
-def test_upload_audio_note_success(mock_analyze_audio, mock_save_media, mock_verify_token, mock_firestore):
-    mock_save_media.return_value = "/uploads/test_audio.webm"
+def test_upload_audio_note_success(mock_analyze_audio, mock_save_media, mock_sync_bg, mock_verify_token, mock_firestore):
+    mock_save_media.return_value = ("uploads/test_audio.webm", "/uploads/test_audio.webm")
     mock_analyze_audio.return_value = {
         "title": "Krótkie nagranie",
         "content": "- Zrobić zakupy\n- Zaplanować sprint"
@@ -272,10 +273,11 @@ def test_upload_audio_note_success(mock_analyze_audio, mock_save_media, mock_ver
     mock_analyze_audio.assert_called_once_with(b"fake-audio-bytes", "audio/webm")
     mock_save_media.assert_called_once()
 
-@patch("src.routers.notes.save_media_file")
+@patch("src.routers.notes.sync_media_to_cloud_bg")
+@patch("src.routers.notes.save_media_file_local")
 @patch("src.routers.notes.analyze_video_note")
-def test_upload_video_note_success(mock_analyze_video, mock_save_media, mock_verify_token, mock_firestore):
-    mock_save_media.return_value = "/uploads/test_video.webm"
+def test_upload_video_note_success(mock_analyze_video, mock_save_media, mock_sync_bg, mock_verify_token, mock_firestore):
+    mock_save_media.return_value = ("uploads/test_video.webm", "/uploads/test_video.webm")
     mock_analyze_video.return_value = {
         "title": "Trening poranny wideo",
         "content": "- Wykonać 10 pompek\n- Rozciąganie"

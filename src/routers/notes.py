@@ -1,11 +1,12 @@
 import uuid
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from src.auth import verify_token
 from src.database import get_db
 from src.schemas import NoteCreate, NoteUpdate, NoteResponse, NoteReorderRequest
 from src.crud import create_note, get_notes, get_note, update_note, delete_note, reorder_notes
 from src.services.ai_service import analyze_audio_note, analyze_video_note
+from src.services.storage_service import save_media_file_local, sync_media_to_cloud_bg
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
 
@@ -18,12 +19,9 @@ def create_new_note(
     uid = user["uid"]
     return create_note(db, uid, note_in)
 
-import os
-import aiofiles
-from src.services.storage_service import save_media_file
-
 @router.post("/audio", response_model=NoteResponse, status_code=status.HTTP_201_CREATED)
 async def upload_audio_note(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user: dict = Depends(verify_token),
     db = Depends(get_db)
@@ -36,20 +34,32 @@ async def upload_audio_note(
     filename = f"{file_id}.{ext}"
     media_type = file.content_type or "audio/webm"
     
-    media_url = save_media_file(file_bytes, filename, media_type)
+    filepath, local_media_url = save_media_file_local(file_bytes, filename)
     
     ai_result = analyze_audio_note(file_bytes, media_type)
     note_in = NoteCreate(
         title=ai_result.get("title", "Notatka Głosowa"),
         content=ai_result.get("content", "Brak wygenerowanej treści."),
         note_type="daily_morning",
-        media_url=media_url,
+        media_url=local_media_url,
         media_type=media_type
     )
-    return create_note(db, uid, note_in)
+    created_note = create_note(db, uid, note_in)
+    
+    background_tasks.add_task(
+        sync_media_to_cloud_bg,
+        created_note["id"],
+        uid,
+        filepath,
+        filename,
+        media_type,
+        db
+    )
+    return created_note
 
 @router.post("/video", response_model=NoteResponse, status_code=status.HTTP_201_CREATED)
 async def upload_video_note(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user: dict = Depends(verify_token),
     db = Depends(get_db)
@@ -62,17 +72,28 @@ async def upload_video_note(
     filename = f"{file_id}.{ext}"
     media_type = file.content_type or "video/webm"
     
-    media_url = save_media_file(file_bytes, filename, media_type)
+    filepath, local_media_url = save_media_file_local(file_bytes, filename)
     
     ai_result = analyze_video_note(file_bytes, media_type)
     note_in = NoteCreate(
         title=ai_result.get("title", "Notatka Wideo"),
         content=ai_result.get("content", "Brak wygenerowanej treści."),
         note_type="daily_morning",
-        media_url=media_url,
+        media_url=local_media_url,
         media_type=media_type
     )
-    return create_note(db, uid, note_in)
+    created_note = create_note(db, uid, note_in)
+    
+    background_tasks.add_task(
+        sync_media_to_cloud_bg,
+        created_note["id"],
+        uid,
+        filepath,
+        filename,
+        media_type,
+        db
+    )
+    return created_note
 
 
 @router.get("", response_model=List[NoteResponse])
