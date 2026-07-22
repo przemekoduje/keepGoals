@@ -242,9 +242,10 @@ def test_delete_note_not_found(mock_verify_token, mock_firestore):
 
 # ----------------- TESTY POST /api/v1/notes/audio i /video -----------------
 
-@patch("src.routers.notes.aiofiles.open")
+@patch("src.routers.notes.save_media_file")
 @patch("src.routers.notes.analyze_audio_note")
-def test_upload_audio_note_success(mock_analyze_audio, mock_aiofiles, mock_verify_token, mock_firestore):
+def test_upload_audio_note_success(mock_analyze_audio, mock_save_media, mock_verify_token, mock_firestore):
+    mock_save_media.return_value = "/uploads/test_audio.webm"
     mock_analyze_audio.return_value = {
         "title": "Krótkie nagranie",
         "content": "- Zrobić zakupy\n- Zaplanować sprint"
@@ -257,11 +258,6 @@ def test_upload_audio_note_success(mock_analyze_audio, mock_aiofiles, mock_verif
                   .collection.return_value \
                   .document.return_value = mock_doc_ref
 
-    # Mockowanie aiofiles async context managera
-    mock_file = MagicMock()
-    mock_file.write = AsyncMock()
-    mock_aiofiles.return_value.__aenter__ = AsyncMock(return_value=mock_file)
-
     headers = {"Authorization": "Bearer valid_token"}
     files = {"file": ("audio.webm", b"fake-audio-bytes", "audio/webm")}
     response = client.post("/api/v1/notes/audio", files=files, headers=headers)
@@ -271,14 +267,15 @@ def test_upload_audio_note_success(mock_analyze_audio, mock_aiofiles, mock_verif
     assert json_data["id"] == "new_audio_note_id"
     assert json_data["title"] == "Krótkie nagranie"
     assert json_data["content"] == "- Zrobić zakupy\n- Zaplanować sprint"
-    assert "media_url" in json_data
+    assert json_data["media_url"] == "/uploads/test_audio.webm"
     assert json_data["media_type"] == "audio/webm"
     mock_analyze_audio.assert_called_once_with(b"fake-audio-bytes", "audio/webm")
-    mock_aiofiles.assert_called_once()
+    mock_save_media.assert_called_once()
 
-@patch("src.routers.notes.aiofiles.open")
+@patch("src.routers.notes.save_media_file")
 @patch("src.routers.notes.analyze_video_note")
-def test_upload_video_note_success(mock_analyze_video, mock_aiofiles, mock_verify_token, mock_firestore):
+def test_upload_video_note_success(mock_analyze_video, mock_save_media, mock_verify_token, mock_firestore):
+    mock_save_media.return_value = "/uploads/test_video.webm"
     mock_analyze_video.return_value = {
         "title": "Trening poranny wideo",
         "content": "- Wykonać 10 pompek\n- Rozciąganie"
@@ -291,10 +288,6 @@ def test_upload_video_note_success(mock_analyze_video, mock_aiofiles, mock_verif
                   .collection.return_value \
                   .document.return_value = mock_doc_ref
 
-    mock_file = MagicMock()
-    mock_file.write = AsyncMock()
-    mock_aiofiles.return_value.__aenter__ = AsyncMock(return_value=mock_file)
-
     headers = {"Authorization": "Bearer valid_token"}
     files = {"file": ("video.webm", b"fake-video-bytes", "video/webm")}
     response = client.post("/api/v1/notes/video", files=files, headers=headers)
@@ -304,7 +297,7 @@ def test_upload_video_note_success(mock_analyze_video, mock_aiofiles, mock_verif
     assert json_data["id"] == "new_video_note_id"
     assert json_data["title"] == "Trening poranny wideo"
     assert json_data["content"] == "- Wykonać 10 pompek\n- Rozciąganie"
-    assert "media_url" in json_data
+    assert json_data["media_url"] == "/uploads/test_video.webm"
     assert json_data["media_type"] == "video/webm"
     mock_analyze_video.assert_called_once_with(b"fake-video-bytes", "video/webm")
-    mock_aiofiles.assert_called_once()
+    mock_save_media.assert_called_once()

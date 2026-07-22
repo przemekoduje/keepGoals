@@ -20,6 +20,7 @@ def create_new_note(
 
 import os
 import aiofiles
+from src.services.storage_service import save_media_file
 
 @router.post("/audio", response_model=NoteResponse, status_code=status.HTTP_201_CREATED)
 async def upload_audio_note(
@@ -30,17 +31,12 @@ async def upload_audio_note(
     uid = user["uid"]
     file_bytes = await file.read()
     
-    # Zapis pliku na dysku
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1] if file.filename and '.' in file.filename else 'webm'
     filename = f"{file_id}.{ext}"
-    filepath = os.path.join("uploads", filename)
-    
-    async with aiofiles.open(filepath, 'wb') as out_file:
-        await out_file.write(file_bytes)
-    
-    media_url = f"/uploads/{filename}"
     media_type = file.content_type or "audio/webm"
+    
+    media_url = save_media_file(file_bytes, filename, media_type)
     
     ai_result = analyze_audio_note(file_bytes, media_type)
     note_in = NoteCreate(
@@ -61,17 +57,12 @@ async def upload_video_note(
     uid = user["uid"]
     file_bytes = await file.read()
     
-    # Zapis pliku na dysku
     file_id = str(uuid.uuid4())
     ext = file.filename.split('.')[-1] if file.filename and '.' in file.filename else 'webm'
     filename = f"{file_id}.{ext}"
-    filepath = os.path.join("uploads", filename)
-    
-    async with aiofiles.open(filepath, 'wb') as out_file:
-        await out_file.write(file_bytes)
-    
-    media_url = f"/uploads/{filename}"
     media_type = file.content_type or "video/webm"
+    
+    media_url = save_media_file(file_bytes, filename, media_type)
     
     ai_result = analyze_video_note(file_bytes, media_type)
     note_in = NoteCreate(
