@@ -4,14 +4,18 @@ import { useAuth } from "../context/AuthContext";
 import { isDemoMode } from "../config/firebase";
 
 export const Login: React.FC = () => {
-  const { user, loginWithGoogle, loginWithFacebook, loginWithTwitter, loginWithEmail } = useAuth();
+  const { user, loginWithGoogle, loginWithEmail, signUpWithEmail } = useAuth();
   const navigate = useNavigate();
+  
+  const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Email form state
+  // Form state
+  const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   if (user) {
     return <Navigate to="/" replace />;
@@ -24,35 +28,54 @@ export const Login: React.FC = () => {
       navigate("/");
     } catch (err: any) {
       console.error(err);
-      setError(`Logowanie przez ${providerName} nie powiodło się.`);
+      setError(`Logowanie przez ${providerName} nie powiodło się. Wypróbuj e-mail lub zaloguj się ponownie.`);
     }
   };
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
     if (!email || !password) {
-      setError("Wpisz e-mail i hasło.");
+      setError("Podaj adres e-mail oraz hasło.");
       return;
     }
+
+    if (isRegistering) {
+      if (password.length < 6) {
+        setError("Hasło powinno składać się z co najmniej 6 znaków.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Hasła nie są identyczne.");
+        return;
+      }
+    }
     
-    setIsEmailLoading(true);
-    setError(null);
+    setIsLoading(true);
     try {
-      await loginWithEmail(email, password);
+      if (isRegistering) {
+        await signUpWithEmail(email, password, displayName.trim() || undefined);
+      } else {
+        await loginWithEmail(email, password);
+      }
       navigate("/");
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/weak-password') {
-        setError("Hasło jest zbyt słabe (minimum 6 znaków).");
-      } else if (err.code === 'auth/invalid-email') {
+      const code = err.code || "";
+      if (code === 'auth/weak-password') {
+        setError("Hasło jest zbyt słabe (wymagane minimum 6 znaków).");
+      } else if (code === 'auth/invalid-email') {
         setError("Niepoprawny format adresu e-mail.");
-      } else if (err.code === 'auth/email-already-in-use') {
-        setError("Ten e-mail jest już zajęty przez inne konto.");
+      } else if (code === 'auth/email-already-in-use') {
+        setError("Konto z tym adresem e-mail już istnieje. Zaloguj się.");
+      } else if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setError("Nieprawidłowy adres e-mail lub hasło.");
       } else {
-        setError("Logowanie / rejestracja nie powiodły się. Sprawdź dane.");
+        setError(err.message || "Wystąpił błąd autoryzacji. Spróbuj ponownie.");
       }
     } finally {
-      setIsEmailLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -60,46 +83,107 @@ export const Login: React.FC = () => {
     <div className="min-h-screen bg-pastel-bg-light dark:bg-slate-900 text-slate-800 dark:text-slate-100 flex items-center justify-center p-4 sm:p-6 font-sans">
       <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-[24px] shadow-sm p-6 sm:p-8 border border-slate-100 dark:border-slate-700 flex flex-col items-center text-center">
         
-        <div className="h-16 w-16 bg-pastel-blue-light text-pastel-blue-dark rounded-full flex items-center justify-center mb-6">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+        <div className="h-14 w-14 bg-pastel-blue-light text-pastel-blue-dark rounded-2xl flex items-center justify-center mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-7 h-7">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
           </svg>
         </div>
         
-        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">
+        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1">
           keepGoals
         </h1>
         
-        <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">
-          Zaloguj się, aby zarządzać swoimi celami i notatkami
+        <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium text-sm">
+          Aplikacja do zarządzania celami i notatkami z AI
         </p>
 
+        {/* Tab Selection */}
+        <div className="flex w-full bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl mb-6">
+          <button
+            type="button"
+            onClick={() => { setIsRegistering(false); setError(null); }}
+            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
+              !isRegistering
+                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            Zaloguj się
+          </button>
+          <button
+            type="button"
+            onClick={() => { setIsRegistering(true); setError(null); }}
+            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
+              isRegistering
+                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            Załóż konto
+          </button>
+        </div>
+
         {/* Formularz Email/Hasło */}
-        <form onSubmit={handleEmailLogin} className="w-full mb-6">
-          <div className="space-y-3">
-            <input
-              type="email"
-              placeholder="Adres e-mail"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
-              required
-            />
-            <input
-              type="password"
-              placeholder="Hasło"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
-              required
-            />
+        <form onSubmit={handleSubmit} className="w-full mb-6">
+          <div className="space-y-3 text-left">
+            {isRegistering && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 ml-1">Twoje Imię</label>
+                <input
+                  type="text"
+                  placeholder="np. Jan Kowalski"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 ml-1">Adres E-mail</label>
+              <input
+                type="email"
+                placeholder="twoj@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 ml-1">Hasło</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                required
+              />
+            </div>
+
+            {isRegistering && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 ml-1">Powtórz Hasło</label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                  required
+                />
+              </div>
+            )}
           </div>
+
           <button
             type="submit"
-            disabled={isEmailLoading}
-            className="w-full mt-4 bg-pastel-blue-dark hover:bg-blue-600 text-white py-3.5 px-6 rounded-xl font-semibold shadow-sm transition-colors duration-200 flex items-center justify-center"
+            disabled={isLoading}
+            className="w-full mt-5 bg-pastel-blue-dark hover:bg-blue-600 active:scale-[0.99] text-white py-3.5 px-6 rounded-xl font-semibold shadow-sm transition-all duration-200 flex items-center justify-center cursor-pointer"
           >
-            {isEmailLoading ? "Przetwarzanie..." : "Zaloguj z E-mail"}
+            {isLoading ? "Przetwarzanie..." : isRegistering ? "Zarejestruj się" : "Zaloguj się"}
           </button>
         </form>
 
@@ -112,8 +196,9 @@ export const Login: React.FC = () => {
         {/* Przyciski Social */}
         <div className="w-full space-y-3">
           <button
+            type="button"
             onClick={() => handleSocialLogin("Google", loginWithGoogle)}
-            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 py-3 px-6 rounded-xl font-semibold shadow-sm transition-colors duration-200 flex items-center justify-center space-x-3"
+            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 py-3 px-6 rounded-xl font-semibold shadow-sm transition-colors duration-200 flex items-center justify-center space-x-3 cursor-pointer"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -121,39 +206,19 @@ export const Login: React.FC = () => {
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
             </svg>
-            <span>Google</span>
-          </button>
-
-          <button
-            onClick={() => handleSocialLogin("Facebook", loginWithFacebook)}
-            className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white py-3 px-6 rounded-xl font-semibold shadow-sm transition-colors duration-200 flex items-center justify-center space-x-3"
-          >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-            </svg>
-            <span>Facebook</span>
-          </button>
-
-          <button
-            onClick={() => handleSocialLogin("X", loginWithTwitter)}
-            className="w-full bg-black hover:bg-slate-800 text-white dark:bg-white dark:text-black dark:hover:bg-slate-200 py-3 px-6 rounded-xl font-semibold shadow-sm transition-colors duration-200 flex items-center justify-center space-x-3"
-          >
-            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/>
-            </svg>
-            <span>X (Twitter)</span>
+            <span>Zaloguj przez Google</span>
           </button>
         </div>
 
         {error && (
-          <p className="text-sm text-rose-500 mt-5 font-medium bg-rose-50 dark:bg-rose-950/30 py-2 px-4 rounded-lg w-full">
-            {error}
-          </p>
+          <div className="text-xs text-rose-600 dark:text-rose-400 mt-5 font-medium bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 py-2.5 px-4 rounded-xl w-full text-left">
+            ⚠️ {error}
+          </div>
         )}
 
         {isDemoMode && (
           <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300 text-left">
-            <span className="font-bold">Tryb demonstracyjny:</span> Zaloguj się dowolną metodą. Zostaniesz wpuszczony jako użytkownik demo.
+            <span className="font-bold">Tryb podglądu (Demo):</span> Wpisz dowolny e-mail i hasło lub wybierz Google. Aby aktywować produktywne Firebase Auth na żywo, uzupełnij klucze w `frontend/.env`.
           </div>
         )}
       </div>

@@ -7,6 +7,7 @@ import {
   TwitterAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  updateProfile,
   signOut
 } from "firebase/auth";
 import type { User } from "firebase/auth";
@@ -19,6 +20,7 @@ interface AuthContextType {
   loginWithFacebook: () => Promise<void>;
   loginWithTwitter: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
+  signUpWithEmail: (email: string, pass: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,11 +34,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isDemoMode) {
       const mockUserSession = localStorage.getItem("mock_user_session");
       if (mockUserSession) {
-        const parsed = JSON.parse(mockUserSession);
-        // recreate getIdToken method
-        parsed.getIdToken = async () => "mock-jwt-token-123";
-        setUser(parsed);
-        setDemoCurrentUser(parsed);
+        try {
+          const parsed = JSON.parse(mockUserSession);
+          parsed.getIdToken = async () => "mock-jwt-token-123";
+          setUser(parsed);
+          setDemoCurrentUser(parsed);
+        } catch (e) {
+          localStorage.removeItem("mock_user_session");
+        }
       }
       setLoading(false);
       return;
@@ -49,11 +54,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return unsubscribe;
   }, []);
 
-  const handleDemoLogin = (providerName: string, emailStr?: string) => {
+  const handleDemoLogin = (providerName: string, emailStr?: string, nameStr?: string) => {
     const mockUser = {
       uid: `mock-user-${Date.now()}`,
       email: emailStr || `demo-${providerName.toLowerCase()}@keepgoals.com`,
-      displayName: `Użytkownik Demo (${providerName})`,
+      displayName: nameStr || `Użytkownik (${providerName})`,
       getIdToken: async () => "mock-jwt-token-123",
     } as unknown as User;
     localStorage.setItem("mock_user_session", JSON.stringify(mockUser));
@@ -81,21 +86,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithEmail = async (email: string, pass: string) => {
     if (isDemoMode) return handleDemoLogin("Email", email);
-    
-    try {
-      // Próba logowania
-      await signInWithEmailAndPassword(auth, email, pass);
-    } catch (error: any) {
-      // Jeśli użytkownik nie istnieje, próbujemy go zarejestrować
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
-        try {
-          await createUserWithEmailAndPassword(auth, email, pass);
-        } catch (regError: any) {
-          throw regError;
-        }
-      } else {
-        throw error;
-      }
+    await signInWithEmailAndPassword(auth, email, pass);
+  };
+
+  const signUpWithEmail = async (email: string, pass: string, name?: string) => {
+    if (isDemoMode) return handleDemoLogin("Email", email, name);
+    const userCred = await createUserWithEmailAndPassword(auth, email, pass);
+    if (name && userCred.user) {
+      await updateProfile(userCred.user, { displayName: name });
     }
   };
 
@@ -110,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginWithGoogle, loginWithFacebook, loginWithTwitter, loginWithEmail, logout }}>
+    <AuthContext.Provider value={{ user, loading, loginWithGoogle, loginWithFacebook, loginWithTwitter, loginWithEmail, signUpWithEmail, logout }}>
       {children}
     </AuthContext.Provider>
   );
