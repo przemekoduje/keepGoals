@@ -1,47 +1,42 @@
-# Plan Kroku 12: Renderowanie Markdown (react-markdown, remark-gfm) oraz Szlif Wizualny (React + Vite)
+# Plan Kroku 15: Multimodalny Backend (FastAPI + Gemini)
 
-**Cel:** Wdrożenie biblioteki renderującej Markdown (`react-markdown` wraz z rozszerzeniem `remark-gfm` dla list zadań) na frontendzie, stworzenie dedykowanego komponentu do stylizacji planów porannych i wieczornych, zastąpienie surowego tekstu sformatowaną treścią wewnątrz kafelków, oraz uproszczenie wyświetlania dat na bardziej naturalne i czytelne (np. "20 lipca, 22:43").
+## Cel operacyjny
+Rozbudowa warstwy backendowej o przyjmowanie plików binarnych (audio/wideo) z frontendu, przekazanie surowych strumieni do agenta AI (Gemini) w celu wygenerowania ustrukturyzowanej notatki (tytuł, szczegółowe podsumowanie, tagi) oraz zapis danych w bazie.
 
-## Pliki do utworzenia i modyfikacji
+## Architektura Rozwiązania
 
-### [NEW] `frontend/src/components/MarkdownRenderer.tsx`
-Dedykowany komponent renderujący i stylizujący Markdown:
-*   Import `react-markdown` oraz wtyczki `remark-gfm`.
-*   Nadpisanie domyślnych stylów HTML za pomocą Tailwind CSS:
-    *   Nagłówki (`h1`, `h2`, `h3`): `font-bold tracking-tight mt-4 mb-2` z ciemnym/jasnym kontrastem.
-    *   Tekst pogrubiony (`strong`): podwyższenie wagi do `font-extrabold` dla szybkiej czytelności.
-    *   Listy zadań (`input[type="checkbox"]`): ukrycie domyślnego systemowego stylu na rzecz niestandardowego, zaokrąglonego checkboxa (`rounded-[6px]`), pasującego do stylizacji pastelowych kafelków.
+### [MODIFY] `src/services/ai_service.py`
+Rozszerzenie serwisu integracji AI o analitykę multimediów z wykorzystaniem modeli Gemini (np. `gemini-1.5-pro` lub `gemini-1.5-flash`), które natywnie wspierają konsumpcję audio i wideo.
+- **Nowe metody**:
+  - `analyze_audio_note(file_bytes: bytes, mime_type: str) -> dict`
+  - `analyze_video_note(file_bytes: bytes, mime_type: str) -> dict`
+- **Logika**:
+  - Przekazanie bajtów (jako inline data base64) oraz przypisanego typu MIME do API Gemini.
+  - Sformułowanie precyzyjnego promptu systemowego nakazującego wyciągnięcie kluczowych informacji, wygenerowanie odpowiedniego, chwytliwego tytułu oraz sformatowanej transkrypcji/opisu w formacie Markdown.
+  - Zwrócenie ustrukturyzowanego wyniku (JSON) zgodnego ze schematami naszej aplikacji (tytuł, treść, typ notatki).
 
-### [MODIFY] `frontend/package.json`
-*   Dodanie zależności `react-markdown` oraz `remark-gfm` do `dependencies`.
+### [MODIFY] `src/routers/notes.py`
+Dodanie nowych kontrolerów nasłuchujących na przesył plików z frontendu.
+- **Endpointy**:
+  - `POST /api/v1/notes/audio`
+  - `POST /api/v1/notes/video`
+- **Logika kontrolerów**:
+  - Wymaganie autoryzacji (zależność `get_current_user` odczytująca token JWT).
+  - Wstrzyknięcie pliku z użyciem klasy `UploadFile` (FastAPI: `file: UploadFile = File(...)`).
+  - Załadowanie binarnej zawartości do pamięci serwera (`await file.read()`).
+  - Przekazanie surowych bajtów do odpowiedniej funkcji analitycznej z `ai_service.py`.
+  - Powołanie do życia nowej struktury bazodanowej (`schemas.NoteCreate`) przy wykorzystaniu rezultatu analizy.
+  - Wywołanie `crud.create_note(...)` z zapisem do bazy.
+  - Zwrócenie nowo wygenerowanej notatki do klienta (odświeżenie interfejsu).
 
-### [MODIFY] `frontend/src/pages/Dashboard.tsx`
-*   Zastąpienie surowego pola tekstowego `{note.content}` wywołaniem `<MarkdownRenderer content={note.content} />` w kafelkach.
-*   Dodanie funkcji pomocniczej `formatNoteDate(dateStr: string): string` konwertującej daty ISO (np. `2026-07-20T22:43:00Z`) na naturalny język polski (np. `20 lipca, 22:43`), co eliminuje techniczny szum.
-*   Weryfikacja wewnętrznych marginesów kafelków `rounded-[24px]` w celu zapewnienia odpowiedniej przestrzeni oddechowej dla sformatowanego tekstu Markdown.
-
----
-
-## Strategia Weryfikacji i Certyfikacja Testami
-
-Zgodnie z zasadą Standaryzacji Środowiska, wszystkie działania uruchomieniowe i weryfikacyjne są przeprowadzane wyłącznie wewnątrz kontenerów Docker Compose:
-
-1.  **Przebudowa i uruchomienie**:
-    ```bash
-    docker-compose up --build -d
-    ```
-2.  **Test renderowania Markdown**:
-    *   Weryfikacja, czy plany poranne (check-listy z `- [ ]`) są renderowane jako ładne, interaktywne lub zablokowane checkboxy z zaokrąglonymi rogami, a nie surowy tekst `- [ ]`.
-    *   Sprawdzenie, czy nagłówki i pogrubienia są czytelne i prawidłowo ostylowane.
-3.  **Wizualny test dat**: Sprawdzenie, czy daty notatek wyświetlają się w przyjaznym formacie.
-4.  **Testy regresji backendowej**:
-    ```bash
-    docker-compose run --rm backend bash -c "pytest tests/"
-    ```
-
-## Koszty
-Brak dodatkowych kosztów integracji. Koszt testów offline: 0 PLN.
+### [MODIFY] `tests/test_notes.py`
+Opracowanie rygorystycznych testów jednostkowych zapobiegających regresji.
+- **Strategia testowania**:
+  - Zaślepienie (`mocking`) wywołań w `ai_service.py`, aby testy nie konsumowały limitów zewnętrznego API LLM, zapewniały izolację i determinizm.
+  - Zasymulowanie przesyłania plików z użyciem metody `.post()` w `TestClient`, wstrzykując fikcyjne pliki audio i wideo:
+    `client.post(..., files={"file": ("test.webm", b"dummy_data", "video/webm")})`
+  - Weryfikacja odpowiedniej struktury obiektu zwracanego (status `200 OK` i potwierdzenie mapowania wygenerowanej przez mock treści na model `Note`).
 
 ---
 **TWARDY STOP (Halt)**
-Oczekuję na weryfikację planu przez Architekta. Zatrzymanie modyfikacji kodu jest bezwzględne. Po pomyślnej walidacji i otrzymaniu autoryzacji proszę o komendę **"Dalej"**.
+Infrastruktura pod obsługę `UploadFile` oraz multimodalne prompty Gemini zostały zaplanowane. Pliki oczekują na fizyczną modyfikację kodu. Proszę o zaakceptowanie zaprojektowanej architektury, aby przystąpić do zmian.

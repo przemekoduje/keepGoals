@@ -1,11 +1,15 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class NoteBase(BaseModel):
     title: Optional[str] = Field(default=None, description="Opcjonalny tytuł notatki")
     content: str = Field(..., description="Główna treść notatki")
     note_type: str = Field(..., description="Kategoryzacja notatki (np. strategic, daily_morning, daily_evening)")
+    is_pinned: bool = Field(default=False, description="Czy notatka jest przypięta")
+    media_url: Optional[str] = Field(default=None, description="Opcjonalny URL do pliku multimedialnego (wideo/audio)")
+    media_type: Optional[str] = Field(default=None, description="Typ mediów, np. 'audio', 'video'")
+    order: int = Field(default=0, description="Kolejność sortowania na tablicy (rośnie)")
 
 class NoteCreate(NoteBase):
     pass
@@ -14,6 +18,15 @@ class NoteUpdate(BaseModel):
     title: Optional[str] = Field(default=None, description="Opcjonalny nowy tytuł notatki")
     content: Optional[str] = Field(default=None, description="Opcjonalna nowa treść notatki")
     note_type: Optional[str] = Field(default=None, description="Opcjonalny nowy typ notatki")
+    is_pinned: Optional[bool] = Field(default=None, description="Opcjonalna zmiana stanu przypięcia")
+    order: Optional[int] = Field(default=None, description="Opcjonalna zmiana kolejności sortowania")
+
+class NoteOrderUpdate(BaseModel):
+    id: str
+    order: int
+
+class NoteReorderRequest(BaseModel):
+    updates: List[NoteOrderUpdate]
 
 class NoteResponse(NoteBase):
     id: str = Field(..., description="Identyfikator dokumentu z Firestore")

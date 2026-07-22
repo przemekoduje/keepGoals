@@ -14,3 +14,9 @@ htmlcov/
 venv/
 .venv/
 env/
+
+# Pliki uzytkownika
+uploads/
+
+firebase-adminsdk.json
+caly_kod.md

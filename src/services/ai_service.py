@@ -121,3 +121,111 @@ Zacznij dzień od najważniejszego zadania jako pierwszego (zasada *Eat That Fro
 """
 
 
+import tempfile
+import os
+import json
+
+audio_system_prompt = """Jesteś wybitnym asystentem redakcyjnym. Twoim zadaniem jest przetworzenie załączonego nagrania głosowego na wysoce ustrukturyzowaną notatkę tekstową.
+
+Zasady przetwarzania:
+1. Korekta: Popraw błędy gramatyczne, składniowe i stylistyczne. Zmień luźny język mówiony na klarowny, profesjonalny i formalny tekst pisany.
+2. Strukturyzacja (Krytyczne): Jeśli z kontekstu nagrania wynika wyliczanie elementów (np. lista zadań, zakupy, instrukcje krok po kroku, słowa "po pierwsze", "kolejna rzecz"), bezwzględnie sformatuj je jako interaktywną listę w standardzie GFM Markdown, używając znaczników `- [ ]`.
+3. Zwięzłość: Odrzuć zająknięcia, powtórzenia słów, dygresje i szum myślowy. Skup się na esencji przekazu.
+
+Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON (bez znaczników formatowania bloku kodu, takich jak ```json):
+{
+    "title": "Trafny, krótki tytuł notatki (max 5 słów)",
+    "content": "Sformatowana treść notatki w standardzie Markdown (z rygorystycznym użyciem - [ ] dla wszelkich list i zadań)"
+}
+"""
+
+VIDEO_SYSTEM_PROMPT = """Jesteś wybitnym asystentem produktywności. Przeanalizuj załączone nagranie wideo.
+Twoim celem jest wyciągnięcie kluczowych informacji i przekształcenie ich w zwięzłą, czytelną notatkę.
+
+Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON, bez żadnych dodatkowych komentarzy ani formatowania blokowego (typu ```json).
+
+Wymagany schemat JSON:
+{
+    "title": "Krótki, chwytliwy tytuł podsumowujący główny wątek (max 5-6 słów).",
+    "content": "Kluczowe informacje w formacie Markdown. Użyj list punktowanych dla lepszej czytelności. Jeżeli z nagrania wynikają konkretne akcje do podjęcia (To-Do), wylistuj je z użyciem checkboxów `- [ ]`. Odrzuć szum i poboczne wątki, bądź maksymalnie konkretny."
+}"""
+
+def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
+    try:
+        client = get_openai_client()
+    except Exception as e:
+        print(f"Błąd inicjalizacji OpenAI klienta: {e}")
+        return {
+            "title": "Notatka awaryjna",
+            "content": "API niedostępne. Wygenerowano dane zastępcze."
+        }
+    
+    # Utworzenie tymczasowego pliku
+    clean_mime = mime_type.split(';')[0].strip()
+    extension = clean_mime.split('/')[-1] if '/' in clean_mime else 'webm'
+    
+    # Fallback jeśli API key nie jest skonfigurowane
+    if not settings.OPENAI_API_KEY:
+        return {
+            "title": "Transkrypcja (Demo)",
+            "content": "To jest przykładowa transkrypcja wygenerowana ponieważ brakuje klucza API.\n\n- [ ] Przeanalizuj to zadanie\n- [ ] Zaplanuj kolejne kroki"
+        }
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{extension}") as temp_file:
+            temp_file.write(file_bytes)
+            temp_path = temp_file.name
+
+        try:
+            # Transkrypcja pliku za pomocą modelu Whisper z OpenAI
+            with open(temp_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file
+                )
+                
+            transcribed_text = transcript.text
+            
+            # Opcjonalne zabezpieczenie przed pustą transkrypcją
+            if not transcribed_text.strip():
+                return {
+                    "title": "Puste nagranie",
+                    "content": "Nie udało się rozpoznać mowy w nagraniu."
+                }
+
+            # Analiza i strukturyzacja przetranskrybowanego tekstu przez GPT-4o-mini
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": f"Oto transkrypcja nagrania do przeanalizowania i sformatowania:\n\n{transcribed_text}"}
+                ]
+            )
+            
+            response_text = response.choices[0].message.content.strip()
+            
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+                
+            return json.loads(response_text.strip())
+            
+        finally:
+            # Czyszczenie zasobów lokalnych
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    except Exception as e:
+        print(f"Błąd analizy mediów AI: {e}. Fallback do danych zastępczych.")
+        return {
+            "title": "Notatka z nagrania (Offline)",
+            "content": "Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu problemów z połączeniem."
+        }
+
+def analyze_audio_note(file_bytes: bytes, mime_type: str) -> dict:
+    return _analyze_media(file_bytes, mime_type, audio_system_prompt)
+
+def analyze_video_note(file_bytes: bytes, mime_type: str) -> dict:
+    return _analyze_media(file_bytes, mime_type, VIDEO_SYSTEM_PROMPT)
+
+
