@@ -121,10 +121,6 @@ Zacznij dzień od najważniejszego zadania jako pierwszego (zasada *Eat That Fro
 """
 
 
-import tempfile
-import os
-import json
-
 audio_system_prompt = """Jesteś wybitnym asystentem redakcyjnym. Twoim zadaniem jest przetworzenie załączonego nagrania głosowego na wysoce ustrukturyzowaną notatkę tekstową.
 
 Zasady przetwarzania:
@@ -150,6 +146,32 @@ Wymagany schemat JSON:
     "content": "Kluczowe informacje w formacie Markdown. Użyj list punktowanych dla lepszej czytelności. Jeżeli z nagrania wynikają konkretne akcje do podjęcia (To-Do), wylistuj je z użyciem checkboxów `- [ ]`. Odrzuć szum i poboczne wątki, bądź maksymalnie konkretny."
 }"""
 
+def extract_audio_for_whisper(input_bytes: bytes, mime_type: str) -> str:
+    """
+    Ekstrahuje i kompresuje ścieżkę dźwiękową z nagrania wideo/audio za pomocą ffmpeg (do formatu MP3 64k).
+    Dzięki temu nawet 50 MB wideo zamienia się w plik mp3 ~500 KB, co eliminuje błąd 413 (limit 25MB w OpenAI Whisper).
+    """
+    clean_mime = mime_type.split(';')[0].strip()
+    ext = clean_mime.split('/')[-1] if '/' in clean_mime else 'webm'
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as in_file:
+        in_file.write(input_bytes)
+        in_path = in_file.name
+
+    out_path = in_path + ".mp3"
+    
+    try:
+        cmd = ['ffmpeg', '-y', '-i', in_path, '-vn', '-acodec', 'libmp3lame', '-ab', '64k', out_path]
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        if os.path.exists(in_path):
+            os.remove(in_path)
+        return out_path
+    except Exception as e:
+        print(f"Ostrzeżenie: Kompresja ffmpeg pominięta ({e}). Używanie oryginalnego pliku.")
+        if os.path.exists(out_path):
+            os.remove(out_path)
+        return in_path
+
 def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
     try:
         client = get_openai_client()
@@ -160,10 +182,6 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
             "content": "API niedostępne. Wygenerowano dane zastępcze."
         }
     
-    # Utworzenie tymczasowego pliku
-    clean_mime = mime_type.split(';')[0].strip()
-    extension = clean_mime.split('/')[-1] if '/' in clean_mime else 'webm'
-    
     # Fallback jeśli API key nie jest skonfigurowane
     if not settings.OPENAI_API_KEY:
         return {
@@ -172,9 +190,8 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
         }
 
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{extension}") as temp_file:
-            temp_file.write(file_bytes)
-            temp_path = temp_file.name
+        # Ekstrakcja audio z nagrania wideo/audio dla OpenAI Whisper (drastyczna redukcja rozmiaru pliku)
+        temp_path = extract_audio_for_whisper(file_bytes, mime_type)
 
         try:
             # Transkrypcja pliku za pomocą modelu Whisper z OpenAI
@@ -219,7 +236,7 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
         print(f"Błąd analizy mediów AI: {e}. Fallback do danych zastępczych.")
         return {
             "title": "Notatka z nagrania (Offline)",
-            "content": "Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu problemów z połączeniem."
+            "content": "Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu błędu połączenia."
         }
 
 def analyze_audio_note(file_bytes: bytes, mime_type: str) -> dict:
