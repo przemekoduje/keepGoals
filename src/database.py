@@ -64,15 +64,19 @@ _mock_db_instance = MockFirestoreClient()
 
 def init_firebase():
     if not firebase_admin._apps:
+        options = {}
+        if settings.FIREBASE_STORAGE_BUCKET:
+            options['storageBucket'] = settings.FIREBASE_STORAGE_BUCKET
+
         if settings.FIREBASE_CREDENTIALS_PATH and os.path.exists(settings.FIREBASE_CREDENTIALS_PATH):
             try:
                 cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
-                firebase_admin.initialize_app(cred)
+                firebase_admin.initialize_app(cred, options if options else None)
             except Exception as e:
                 print(f"Ostrzeżenie: Nie udało się zainicjalizować Firebase z certyfikatu: {e}")
         else:
             try:
-                firebase_admin.initialize_app()
+                firebase_admin.initialize_app(options=options if options else None)
             except Exception as e:
                 print(f"Ostrzeżenie: Brak domyślnych credentials Firebase: {e}")
 
