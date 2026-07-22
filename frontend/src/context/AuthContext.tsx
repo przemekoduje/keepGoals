@@ -3,6 +3,10 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   GoogleAuthProvider,
+  FacebookAuthProvider,
+  TwitterAuthProvider,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut
 } from "firebase/auth";
 import type { User } from "firebase/auth";
@@ -12,6 +16,9 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   loginWithGoogle: () => Promise<void>;
+  loginWithFacebook: () => Promise<void>;
+  loginWithTwitter: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -42,22 +49,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return unsubscribe;
   }, []);
 
-  const loginWithGoogle = async () => {
-    if (isDemoMode) {
-      const mockUser = {
-        uid: "mock-user-123",
-        email: "demo-user@keepgoals.com",
-        displayName: "Użytkownik Demo",
-        getIdToken: async () => "mock-jwt-token-123",
-      } as unknown as User;
-      localStorage.setItem("mock_user_session", JSON.stringify(mockUser));
-      setUser(mockUser);
-      setDemoCurrentUser(mockUser);
-      return;
-    }
+  const handleDemoLogin = (providerName: string, emailStr?: string) => {
+    const mockUser = {
+      uid: `mock-user-${Date.now()}`,
+      email: emailStr || `demo-${providerName.toLowerCase()}@keepgoals.com`,
+      displayName: `Użytkownik Demo (${providerName})`,
+      getIdToken: async () => "mock-jwt-token-123",
+    } as unknown as User;
+    localStorage.setItem("mock_user_session", JSON.stringify(mockUser));
+    setUser(mockUser);
+    setDemoCurrentUser(mockUser);
+  };
 
+  const loginWithGoogle = async () => {
+    if (isDemoMode) return handleDemoLogin("Google");
     const provider = new GoogleAuthProvider();
     await signInWithPopup(auth, provider);
+  };
+
+  const loginWithFacebook = async () => {
+    if (isDemoMode) return handleDemoLogin("Facebook");
+    const provider = new FacebookAuthProvider();
+    await signInWithPopup(auth, provider);
+  };
+
+  const loginWithTwitter = async () => {
+    if (isDemoMode) return handleDemoLogin("Twitter");
+    const provider = new TwitterAuthProvider();
+    await signInWithPopup(auth, provider);
+  };
+
+  const loginWithEmail = async (email: string, pass: string) => {
+    if (isDemoMode) return handleDemoLogin("Email", email);
+    
+    try {
+      // Próba logowania
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (error: any) {
+      // Jeśli użytkownik nie istnieje, próbujemy go zarejestrować
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
+        try {
+          await createUserWithEmailAndPassword(auth, email, pass);
+        } catch (regError: any) {
+          throw regError;
+        }
+      } else {
+        throw error;
+      }
+    }
   };
 
   const logout = async () => {
@@ -71,7 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, loginWithGoogle, loginWithFacebook, loginWithTwitter, loginWithEmail, logout }}>
       {children}
     </AuthContext.Provider>
   );
