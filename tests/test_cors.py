@@ -19,6 +19,17 @@ def test_cors_headers_allowed():
     assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
     assert response.headers.get("access-control-allow-methods") is not None
 
+def test_cors_headers_https_allowed():
+    # Żądanie OPTIONS z HTTPS (Origin z HTTPS dla localhost/mobile)
+    headers = {
+        "Origin": "https://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "Authorization,Content-Type",
+    }
+    response = client.options("/api/v1/notes", headers=headers)
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "https://localhost:5173"
+
 def test_cors_headers_invalid_origin():
     # Żądanie OPTIONS z niedozwolonego źródła (Origin)
     headers = {

@@ -19,19 +19,25 @@ class Settings:
     FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET", "")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
     
-    # Podstawowe dozwolone adresy
+    # Podstawowe dozwolone adresy (HTTP i HTTPS)
     _origins = [
         "http://localhost:3000",
         "http://localhost:5173",
+        "https://localhost:3000",
+        "https://localhost:5173",
         "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "https://127.0.0.1:3000",
+        "https://127.0.0.1:5173"
     ]
     
-    # Dodaj lokalne IP jeśli jest dostępne
+    # Dodaj lokalne IP jeśli jest dostępne (zarówno HTTP jak i HTTPS)
     _local_ip = get_local_ip()
     if _local_ip:
         _origins.append(f"http://{_local_ip}:3000")
         _origins.append(f"http://{_local_ip}:5173")
+        _origins.append(f"https://{_local_ip}:3000")
+        _origins.append(f"https://{_local_ip}:5173")
         
     ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", ",".join(_origins)).split(",")
 
