@@ -110,10 +110,12 @@ export async function generateEveningReflection(reflectionData: {
   return response.json();
 }
 
-export async function uploadAudio(file: Blob): Promise<Note> {
+export async function uploadAudio(file: Blob | File): Promise<Note> {
   const headers = await getAuthHeaders(true);
   const formData = new FormData();
-  formData.append("file", file, "recording.webm");
+  const ext = (file.type.includes('mp4') || file.type.includes('m4a')) ? 'm4a' : 'webm';
+  const fileName = (file as File).name || `recording.${ext}`;
+  formData.append("file", file, fileName);
 
   const response = await fetch(`${API_URL}/api/v1/notes/audio`, {
     method: "POST",
@@ -128,10 +130,12 @@ export async function uploadAudio(file: Blob): Promise<Note> {
   return response.json();
 }
 
-export async function uploadVideo(file: Blob): Promise<Note> {
+export async function uploadVideo(file: Blob | File): Promise<Note> {
   const headers = await getAuthHeaders(true);
   const formData = new FormData();
-  formData.append("file", file, "video.webm");
+  const ext = file.type.includes('mp4') ? 'mp4' : file.type.includes('quicktime') ? 'mov' : 'webm';
+  const fileName = (file as File).name || `video.${ext}`;
+  formData.append("file", file, fileName);
 
   const response = await fetch(`${API_URL}/api/v1/notes/video`, {
     method: "POST",
