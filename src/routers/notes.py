@@ -6,7 +6,7 @@ from src.database import get_db
 from src.schemas import NoteCreate, NoteUpdate, NoteResponse, NoteReorderRequest
 from src.crud import create_note, get_notes, get_note, update_note, delete_note, reorder_notes
 from src.services.ai_service import analyze_audio_note, analyze_video_note
-from src.services.storage_service import save_media_file_local, sync_media_to_cloud_bg
+from src.services.storage_service import save_media_file_local, sync_media_to_cloud_bg, process_media_and_cloud_sync_bg
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
 
@@ -36,10 +36,9 @@ async def upload_audio_note(
     
     filepath, local_media_url = save_media_file_local(file_bytes, filename)
     
-    ai_result = analyze_audio_note(file_bytes, media_type)
     note_in = NoteCreate(
-        title=ai_result.get("title", "Notatka Głosowa"),
-        content=ai_result.get("content", "Brak wygenerowanej treści."),
+        title="Nagranie Głosowe",
+        content="Przetwarzanie transkrypcji AI w tle...",
         note_type="daily_morning",
         media_url=local_media_url,
         media_type=media_type
@@ -47,12 +46,14 @@ async def upload_audio_note(
     created_note = create_note(db, uid, note_in)
     
     background_tasks.add_task(
-        sync_media_to_cloud_bg,
+        process_media_and_cloud_sync_bg,
         created_note["id"],
         uid,
         filepath,
         filename,
+        file_bytes,
         media_type,
+        False,
         db
     )
     return created_note
@@ -74,10 +75,9 @@ async def upload_video_note(
     
     filepath, local_media_url = save_media_file_local(file_bytes, filename)
     
-    ai_result = analyze_video_note(file_bytes, media_type)
     note_in = NoteCreate(
-        title=ai_result.get("title", "Notatka Wideo"),
-        content=ai_result.get("content", "Brak wygenerowanej treści."),
+        title="Nagranie Wideo",
+        content="Przetwarzanie transkrypcji AI w tle...",
         note_type="daily_morning",
         media_url=local_media_url,
         media_type=media_type
@@ -85,12 +85,14 @@ async def upload_video_note(
     created_note = create_note(db, uid, note_in)
     
     background_tasks.add_task(
-        sync_media_to_cloud_bg,
+        process_media_and_cloud_sync_bg,
         created_note["id"],
         uid,
         filepath,
         filename,
+        file_bytes,
         media_type,
+        True,
         db
     )
     return created_note

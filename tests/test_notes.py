@@ -242,15 +242,10 @@ def test_delete_note_not_found(mock_verify_token, mock_firestore):
 
 # ----------------- TESTY POST /api/v1/notes/audio i /video -----------------
 
-@patch("src.routers.notes.sync_media_to_cloud_bg")
+@patch("src.routers.notes.process_media_and_cloud_sync_bg")
 @patch("src.routers.notes.save_media_file_local")
-@patch("src.routers.notes.analyze_audio_note")
-def test_upload_audio_note_success(mock_analyze_audio, mock_save_media, mock_sync_bg, mock_verify_token, mock_firestore):
+def test_upload_audio_note_success(mock_save_media, mock_bg_proc, mock_verify_token, mock_firestore):
     mock_save_media.return_value = ("uploads/test_audio.webm", "/uploads/test_audio.webm")
-    mock_analyze_audio.return_value = {
-        "title": "Krótkie nagranie",
-        "content": "- Zrobić zakupy\n- Zaplanować sprint"
-    }
     
     mock_doc_ref = MagicMock()
     mock_doc_ref.id = "new_audio_note_id"
@@ -266,22 +261,16 @@ def test_upload_audio_note_success(mock_analyze_audio, mock_save_media, mock_syn
     assert response.status_code == 201
     json_data = response.json()
     assert json_data["id"] == "new_audio_note_id"
-    assert json_data["title"] == "Krótkie nagranie"
-    assert json_data["content"] == "- Zrobić zakupy\n- Zaplanować sprint"
+    assert json_data["title"] == "Nagranie Głosowe"
     assert json_data["media_url"] == "/uploads/test_audio.webm"
     assert json_data["media_type"] == "audio/webm"
-    mock_analyze_audio.assert_called_once_with(b"fake-audio-bytes", "audio/webm")
     mock_save_media.assert_called_once()
+    mock_bg_proc.assert_called_once()
 
-@patch("src.routers.notes.sync_media_to_cloud_bg")
+@patch("src.routers.notes.process_media_and_cloud_sync_bg")
 @patch("src.routers.notes.save_media_file_local")
-@patch("src.routers.notes.analyze_video_note")
-def test_upload_video_note_success(mock_analyze_video, mock_save_media, mock_sync_bg, mock_verify_token, mock_firestore):
+def test_upload_video_note_success(mock_save_media, mock_bg_proc, mock_verify_token, mock_firestore):
     mock_save_media.return_value = ("uploads/test_video.webm", "/uploads/test_video.webm")
-    mock_analyze_video.return_value = {
-        "title": "Trening poranny wideo",
-        "content": "- Wykonać 10 pompek\n- Rozciąganie"
-    }
     
     mock_doc_ref = MagicMock()
     mock_doc_ref.id = "new_video_note_id"
@@ -297,9 +286,8 @@ def test_upload_video_note_success(mock_analyze_video, mock_save_media, mock_syn
     assert response.status_code == 201
     json_data = response.json()
     assert json_data["id"] == "new_video_note_id"
-    assert json_data["title"] == "Trening poranny wideo"
-    assert json_data["content"] == "- Wykonać 10 pompek\n- Rozciąganie"
+    assert json_data["title"] == "Nagranie Wideo"
     assert json_data["media_url"] == "/uploads/test_video.webm"
     assert json_data["media_type"] == "video/webm"
-    mock_analyze_video.assert_called_once_with(b"fake-video-bytes", "video/webm")
     mock_save_media.assert_called_once()
+    mock_bg_proc.assert_called_once()

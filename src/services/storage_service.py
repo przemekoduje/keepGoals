@@ -77,3 +77,47 @@ def sync_media_to_cloud_bg(note_id: str, uid: str, filepath: str, filename: str,
             print(f"[Storage Sync BG] Zaktualizowano notatkę {note_id} o trwały media_url w bazie.")
         except Exception as e:
             print(f"[Storage Sync BG] Błąd aktualizacji notatki w bazie: {e}")
+
+def process_media_and_cloud_sync_bg(
+    note_id: str,
+    uid: str,
+    filepath: str,
+    filename: str,
+    file_bytes: bytes,
+    content_type: str,
+    is_video: bool,
+    db
+):
+    """
+    Pełne przetwarzanie w tle (BackgroundTasks):
+    1. Przeprowadza transkrypcję i analizę AI (ffmpeg + OpenAI Whisper + GPT-4o-mini).
+    2. Aktualizuje tytuł i treść notatki w chmurze Firestore.
+    3. Wysyła plik multimedialny do Firebase Storage i aktualizuje `media_url`.
+    """
+    from src.services.ai_service import analyze_audio_note, analyze_video_note
+
+    # 1. Analiza AI w tle
+    try:
+        if is_video:
+            ai_result = analyze_video_note(file_bytes, content_type)
+        else:
+            ai_result = analyze_audio_note(file_bytes, content_type)
+            
+        title = ai_result.get("title")
+        content = ai_result.get("content")
+        
+        if db and title and content:
+            try:
+                doc_ref = db.collection("users").document(uid).collection("notes").document(note_id)
+                doc_ref.update({
+                    "title": title,
+                    "content": content
+                })
+                print(f"[BG Process] Notatka {note_id} pomyślnie zaktualizowana o treść AI: '{title}'")
+            except Exception as e:
+                print(f"[BG Process Error] Błąd aktualizacji Firestore dla notatki {note_id}: {e}")
+    except Exception as e:
+        print(f"[BG Process Error] Wyjątek podczas analizy AI mediów: {e}")
+
+    # 2. Synchronizacja pliku z Firebase Storage
+    sync_media_to_cloud_bg(note_id, uid, filepath, filename, content_type, db)
