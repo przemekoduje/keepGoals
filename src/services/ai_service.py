@@ -34,7 +34,7 @@ def get_ai_client_and_model(task_type: str = "llm") -> tuple[OpenAI, str]:
     """
     if settings.GROQ_API_KEY:
         client = get_groq_client()
-        model = "whisper-large-v3" if task_type == "whisper" else "llama-3.1-70b-versatile"
+        model = "whisper-large-v3" if task_type == "whisper" else "llama-3.3-70b-versatile"
         return client, model
     else:
         client = get_openai_client()
