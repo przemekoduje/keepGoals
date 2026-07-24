@@ -2,6 +2,12 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
+class NoteEvent(BaseModel):
+    title: str = Field(..., description="Tytuł wydarzenia")
+    date_start: str = Field(..., description="Data i czas rozpoczęcia (format ISO, np. 20240101T120000Z)")
+    date_end: str = Field(..., description="Data i czas zakończenia (format ISO, np. 20240101T130000Z)")
+    description: Optional[str] = Field(default="", description="Opis wydarzenia")
+
 class NoteBase(BaseModel):
     title: Optional[str] = Field(default=None, description="Opcjonalny tytuł notatki")
     content: str = Field(..., description="Główna treść notatki")
@@ -9,9 +15,11 @@ class NoteBase(BaseModel):
     is_pinned: bool = Field(default=False, description="Czy notatka jest przypięta")
     media_url: Optional[str] = Field(default=None, description="Opcjonalny URL do pliku multimedialnego (wideo/audio)")
     media_type: Optional[str] = Field(default=None, description="Typ mediów, np. 'audio', 'video'")
+    raw_transcript: Optional[str] = Field(default=None, description="Surowy tekst transkrypcji z Whisper")
     order: int = Field(default=0, description="Kolejność sortowania na tablicy (rośnie)")
     is_deleted: bool = Field(default=False, description="Czy notatka jest w koszu")
     deleted_at: Optional[datetime] = Field(default=None, description="Kiedy notatka została usunięta (umieszczona w koszu)")
+    events: Optional[List[NoteEvent]] = Field(default=[], description="Lista wykrytych wydarzeń terminowych")
 
 class NoteCreate(NoteBase):
     pass

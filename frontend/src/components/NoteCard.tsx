@@ -1,11 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Palette, Bell, Users, Image, Archive, MoreVertical, Pin, Check, Trash2, Type, Tag, GripHorizontal, Play, Headphones } from "lucide-react";
+import { Palette, Bell, Users, Image, Archive, MoreVertical, Pin, Check, Trash2, Type, Tag, GripHorizontal, Play, Headphones, CalendarDays } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { Note } from "../services/api";
 
-const API_URL = import.meta.env.VITE_API_URL || "";
 
 interface NoteCardProps {
   note: Note;
@@ -31,7 +30,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   const isAudio = note.media_type?.startsWith("audio/");
   const isVideo = note.media_type?.startsWith("video/");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [mediaError, setMediaError] = useState(false);
+
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -136,6 +135,37 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           />
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white dark:from-[#202124] to-transparent pointer-events-none"></div>
         </div>
+
+        {/* Events */}
+        {note.events && note.events.length > 0 && (
+          <div className="mt-3 space-y-2 relative z-10">
+            {note.events.map((event, idx) => (
+              <div key={idx} className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 rounded-lg p-2.5 flex flex-col space-y-1.5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-1.5 text-blue-700 dark:text-blue-300 font-medium text-sm">
+                    <CalendarDays className="w-4 h-4 flex-shrink-0" />
+                    <span className="line-clamp-1">{event.title}</span>
+                  </div>
+                  <a 
+                    href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.date_start.replace(/[-:]/g, "")}/${event.date_end.replace(/[-:]/g, "")}${event.description ? `&details=${encodeURIComponent(event.description)}` : ""}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs font-medium bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-800/50 text-blue-600 dark:text-blue-400 px-2 py-1 rounded transition-colors whitespace-nowrap ml-2"
+                    title="Dodaj do kalendarza Google"
+                  >
+                    Dodaj
+                  </a>
+                </div>
+                <div className="text-xs text-blue-600/80 dark:text-blue-400/80 pl-5">
+                  {new Date(event.date_start).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}
+                  {' - '}
+                  {new Date(event.date_end).toLocaleString('pl-PL', { timeStyle: 'short' })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Bottom Hover Toolbar */}

@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import { 
   Palette, Bell, Users, Image as ImageIcon, Archive, MoreVertical, Pin, 
-  Trash2, Type, Tag, Heading1, Heading2, Bold, Italic, Underline, Baseline, Eraser,
-  List, ListOrdered, ListTodo, Sparkles
+  Trash2, Type, Tag, Bold, Italic, Underline, Baseline, Eraser,
+  List, ListOrdered, ListTodo, Sparkles, CalendarDays
 } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { NoteAIChatModal } from "./NoteAIChatModal";
@@ -379,6 +379,46 @@ export const NoteModal: React.FC<NoteModalProps> = ({
               />
             )}
           </div>
+
+          {/* Events */}
+          {note.events && note.events.length > 0 && (
+            <div className="mt-6 mb-2 space-y-3 relative z-10 border-t border-slate-100 dark:border-slate-800 pt-4">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center">
+                <CalendarDays className="w-4 h-4 mr-2" />
+                Wykryte wydarzenia
+              </h3>
+              {note.events.map((event, idx) => (
+                <div key={idx} className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/30 rounded-xl p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="text-blue-800 dark:text-blue-300 font-medium text-base mb-1">
+                      {event.title}
+                    </div>
+                    <div className="text-sm text-blue-600/80 dark:text-blue-400/80 mb-2 font-medium">
+                      {new Date(event.date_start).toLocaleString('pl-PL', { dateStyle: 'long', timeStyle: 'short' })}
+                      {' - '}
+                      {new Date(event.date_end).toLocaleString('pl-PL', { timeStyle: 'short' })}
+                    </div>
+                    {event.description && (
+                      <div className="text-sm text-slate-600 dark:text-slate-400">
+                        {event.description}
+                      </div>
+                    )}
+                  </div>
+                  <a 
+                    href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.date_start.replace(/[-:]/g, "")}/${event.date_end.replace(/[-:]/g, "")}${event.description ? `&details=${encodeURIComponent(event.description)}` : ""}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center justify-center whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors text-sm shadow-sm"
+                    title="Dodaj do kalendarza Google"
+                  >
+                    <CalendarDays className="w-4 h-4 mr-2" />
+                    Dodaj
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Formatting Toolbar */}
           {showFormattingBar && isEditing && (

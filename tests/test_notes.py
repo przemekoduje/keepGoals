@@ -222,7 +222,7 @@ def test_delete_note_success(mock_verify_token, mock_firestore):
     assert response.status_code == 200
     json_data = response.json()
     assert "pomyślnie usunięta" in json_data["message"]
-    mock_doc_ref.delete.assert_called_once()
+    mock_doc_ref.update.assert_called_once()
 
 def test_delete_note_not_found(mock_verify_token, mock_firestore):
     mock_doc = create_mock_doc("non_existing_id", {}, exists=False)

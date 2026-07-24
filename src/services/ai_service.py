@@ -8,6 +8,7 @@ from openai import OpenAI
 from src.config import settings
 
 _client = None
+_groq_client = None
 
 def get_openai_client() -> OpenAI:
     global _client
@@ -16,12 +17,36 @@ def get_openai_client() -> OpenAI:
         _client = OpenAI(api_key=api_key)
     return _client
 
+def get_groq_client() -> OpenAI:
+    global _groq_client
+    if _groq_client is None:
+        api_key = settings.GROQ_API_KEY or None
+        _groq_client = OpenAI(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=api_key
+        )
+    return _groq_client
+
+def get_ai_client_and_model(task_type: str = "llm") -> tuple[OpenAI, str]:
+    """
+    Zwraca odpowiedniego klienta (Groq lub OpenAI) oraz nazwę modelu w zależności od konfiguracji.
+    task_type: "llm" lub "whisper"
+    """
+    if settings.GROQ_API_KEY:
+        client = get_groq_client()
+        model = "whisper-large-v3" if task_type == "whisper" else "llama-3.1-70b-versatile"
+        return client, model
+    else:
+        client = get_openai_client()
+        model = "whisper-1" if task_type == "whisper" else "gpt-4o-mini"
+        return client, model
+
 def generate_morning_plan(strategic_goals: list[str]) -> str:
     """
     Generuje plan poranny w oparciu o listę celów strategicznych użytkownika.
     Zwraca checklistę w formacie Markdown.
     """
-    if not settings.OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
         return """# Twój Plan Poranny (Demo AI)
 
 Oto zoptymalizowany plan dnia wspierający Twoje cele strategiczne:
@@ -33,7 +58,7 @@ Oto zoptymalizowany plan dnia wspierający Twoje cele strategiczne:
 """
 
     try:
-        client = get_openai_client()
+        client, model = get_ai_client_and_model("llm")
         goals_formatted = "\n".join([f"- {goal}" for goal in strategic_goals])
         
         prompt = f"""Jesteś osobistym asystentem produktywności.
@@ -44,7 +69,7 @@ Plan musi bezpośrednio wspierać realizację poniższych celów strategicznych 
 Zwróć wyłącznie plan dnia jako listę zadań do wykonania w formacie Markdown, bez żadnych wstępów, podsumowań czy komentarzy."""
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=[
                 {"role": "user", "content": prompt}
             ]
@@ -66,7 +91,7 @@ def generate_evening_reflection(reflection_data: dict, strategic_goals: list[str
     """
     Generuje wieczorną refleksję (mentor) analizując sukcesy i porażki dnia w odniesieniu do celów strategicznych.
     """
-    if not settings.OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
         return """# Analiza Mentora (Demo AI)
 
 Przeanalizowałem Twój dzisiejszy dzień w odniesieniu do celów strategicznych. Oto moje spostrzeżenia:
@@ -81,7 +106,7 @@ Zacznij dzień od najważniejszego zadania jako pierwszego (zasada *Eat That Fro
 """
 
     try:
-        client = get_openai_client()
+        client, model = get_ai_client_and_model("llm")
         
         goals_formatted = "\n".join([f"- {goal}" for goal in strategic_goals])
         completed_formatted = "\n".join([f"- {task}" for task in reflection_data.get("completed_tasks", [])])
@@ -105,7 +130,7 @@ Dzisiejsza wieczorna refleksja:
 Wygeneruj zwięzłe podsumowanie z konstruktywnymi wnioskami optymalizacyjnymi na jutro w formacie Markdown. Twoja odpowiedź powinna być wspierająca, obiektywna i skupiona na konkretnych krokach poprawy."""
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=[
                 {"role": "user", "content": prompt}
             ]
@@ -131,25 +156,44 @@ audio_system_prompt = """Jesteś wybitnym asystentem redakcyjnym. Twoim zadaniem
 
 Zasady przetwarzania:
 1. Korekta: Popraw błędy gramatyczne, składniowe i stylistyczne. Zmień luźny język mówiony na klarowny, profesjonalny i formalny tekst pisany.
-2. Strukturyzacja (Krytyczne): Jeśli z kontekstu nagrania wynika wyliczanie elementów (np. lista zadań, zakupy, instrukcje krok po kroku, słowa "po pierwsze", "kolejna rzecz"), bezwzględnie sformatuj je jako interaktywną listę w standardzie GFM Markdown, używając znaczników `- [ ]`.
+2. Strukturyzacja (Krytyczne): Notatka w polu `content` MUSI składać się z dwóch części:
+   a) Krótkie opisowe streszczenie (narracyjna relacja) nagranej rozmowy, opisujące kontekst, omawiane tematy i ogólne ustalenia.
+   b) Następnie (po nagłówku, np. "### Zadania do wykonania" lub "### Ustalenia") lista zadań / akcji do podjęcia, sformatowana za pomocą checkboxów `- [ ]` w standardzie GFM Markdown.
 3. Zwięzłość: Odrzuć zająknięcia, powtórzenia słów, dygresje i szum myślowy. Skup się na esencji przekazu.
+4. Wydarzenia terminowe: Wykryj w treści wszelkie propozycje dat, terminów, spotkań czy przypomnień w czasie. Załóż, że bieżący rok to bieżący rok kalendarzowy (jeśli nie podano inaczej).
 
 Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON (bez znaczników formatowania bloku kodu, takich jako ```json):
 {
     "title": "Trafny, krótki tytuł notatki (max 5 słów)",
-    "content": "Sformatowana treść notatki w standardzie Markdown (z rygorystycznym użyciem - [ ] dla wszelkich list i zadań)"
+    "content": "Tutaj wpisz krótki, kilkuzdaniowy opisowy wstęp relacjonujący przebieg rozmowy i jej kontekst.\\n\\n### Zadania do wykonania\\n- [ ] Pierwsze zadanie do wykonania\\n- [ ] Drugie zadanie do wykonania",
+    "events": [
+        {
+            "title": "Krótki tytuł wydarzenia",
+            "date_start": "Data i czas rozpoczęcia (standardowy format ISO-8601, np. 2024-01-01T12:00:00Z)",
+            "date_end": "Data i czas zakończenia (standardowy format ISO-8601, np. 2024-01-01T13:00:00Z)",
+            "description": "Krótki opis kontekstowy"
+        }
+    ]
 }
 """
 
 VIDEO_SYSTEM_PROMPT = """Jesteś wybitnym asystentem produktywności. Przeanalizuj załączone nagranie wideo.
-Twoim celem jest wyciągnięcie kluczowych informacji i przekształcenie ich w zwięzłą, czytelną notatkę.
+Twoim celem jest wyciągnięcie kluczowych informacji i przekształcenie ich w zwięzłą, czytelną notatkę oraz wyodrębnienie wszelkich omawianych dat i spotkań.
 
 Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON, bez żadnych dodatkowych komentarzy ani formatowania blokowego (typu ```json).
 
 Wymagany schemat JSON:
 {
     "title": "Krótki, chwytliwy tytuł podsumowujący główny wątek (max 5-6 słów).",
-    "content": "Kluczowe informacje w formacie Markdown. Użyj list punktowanych dla lepszej czytelności. Jeżeli z nagrania wynikają konkretne akcje do podjęcia (To-Do), wylistuj je z użyciem checkboxów `- [ ]`. Odrzuć szum i poboczne wątki, bądź maksymalnie konkretny."
+    "content": "Tutaj wpisz krótki, kilkuzdaniowy opisowy wstęp relacjonujący przebieg nagrania wideo i jego kontekst.\\n\\n### Zadania do wykonania\\n- [ ] Pierwsze zadanie do wykonania\\n- [ ] Drugie zadanie do wykonania",
+    "events": [
+        {
+            "title": "Tytuł spotkania / wydarzenia",
+            "date_start": "Data i czas rozpoczęcia (standardowy format ISO-8601, np. 2024-01-01T12:00:00Z)",
+            "date_end": "Data i czas zakończenia (standardowy format ISO-8601, np. 2024-01-01T13:00:00Z)",
+            "description": "Krótki opis zdarzenia"
+        }
+    ]
 }"""
 
 def extract_audio_for_whisper(input_bytes: bytes, mime_type: str) -> str:
@@ -179,20 +223,11 @@ def extract_audio_for_whisper(input_bytes: bytes, mime_type: str) -> str:
         return in_path
 
 def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
-    try:
-        client = get_openai_client()
-    except Exception as e:
-        print(f"Błąd inicjalizacji OpenAI klienta: {e}")
-        return {
-            "title": "Notatka awaryjna",
-            "content": "API niedostępne. Wygenerowano dane zastępcze."
-        }
-    
     # Fallback jeśli API key nie jest skonfigurowane
-    if not settings.OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
         return {
             "title": "Transkrypcja (Demo)",
-            "content": "To jest przykładowa transkrypcja wygenerowana ponieważ brakuje klucza API.\n\n- [ ] Przeanalizuj to zadanie\n- [ ] Zaplanuj kolejne kroki"
+            "content": "To jest przykładowa transkrypcja wygenerowana ponieważ brakuje kluczy API w pliku .env.\n\n- [ ] Przeanalizuj to zadanie\n- [ ] Zaplanuj kolejne kroki"
         }
 
     try:
@@ -200,10 +235,13 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
         temp_path = extract_audio_for_whisper(file_bytes, mime_type)
 
         try:
-            # Transkrypcja pliku za pomocą modelu Whisper z OpenAI
+            # Pobierz odpowiedniego klienta i model dla transkrypcji
+            whisper_client, whisper_model = get_ai_client_and_model("whisper")
+            
+            # Transkrypcja pliku za pomocą modelu Whisper
             with open(temp_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
+                transcript = whisper_client.audio.transcriptions.create(
+                    model=whisper_model,
                     file=audio_file
                 )
                 
@@ -216,9 +254,12 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
                     "content": "Nie udało się rozpoznać mowy w nagraniu."
                 }
 
-            # Analiza i strukturyzacja przetranskrybowanego tekstu przez GPT-4o-mini
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
+            # Pobierz odpowiedniego klienta i model dla analizy tekstu
+            llm_client, llm_model = get_ai_client_and_model("llm")
+
+            # Analiza i strukturyzacja przetranskrybowanego tekstu
+            response = llm_client.chat.completions.create(
+                model=llm_model,
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"Oto transkrypcja nagrania do przeanalizowania i sformatowania:\n\n{transcribed_text}"}
@@ -232,24 +273,32 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
             if response_text.endswith("```"):
                 response_text = response_text[:-3]
                 
-            return json.loads(response_text.strip())
+            result = json.loads(response_text.strip())
+            result["raw_transcript"] = transcribed_text
+            return result
             
         finally:
             # Czyszczenie zasobów lokalnych
             if os.path.exists(temp_path):
                 os.remove(temp_path)
     except Exception as e:
-        print(f"Błąd analizy mediów AI: {e}. Fallback do danych zastęych.")
+        print(f"Błąd analizy mediów AI: {e}. Fallback do danych zastępczych.")
         return {
             "title": "Notatka z nagrania (Offline)",
-            "content": "Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu błędu połączenia."
+            "content": f"Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu błędu: {e}"
         }
 
 def analyze_audio_note(file_bytes: bytes, mime_type: str) -> dict:
-    return _analyze_media(file_bytes, mime_type, audio_system_prompt)
+    from datetime import datetime
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    time_context = f"\nBieżący czas (punkt odniesienia): {now_str}\n"
+    return _analyze_media(file_bytes, mime_type, audio_system_prompt + time_context)
 
 def analyze_video_note(file_bytes: bytes, mime_type: str) -> dict:
-    return _analyze_media(file_bytes, mime_type, VIDEO_SYSTEM_PROMPT)
+    from datetime import datetime
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    time_context = f"\nBieżący czas (punkt odniesienia): {now_str}\n"
+    return _analyze_media(file_bytes, mime_type, VIDEO_SYSTEM_PROMPT + time_context)
 
 
 CHAT_SYSTEM_PROMPT = """Jesteś inteligentnym asystentem redakcyjnym notatki.
@@ -263,22 +312,55 @@ Jeśli nie modyfikujesz notatki, po prostu odpisz w czacie. Odpowiadaj zwięźle
 """
 
 def extract_video_frames(video_path: str, num_frames: int = 6) -> list[str]:
+    import cv2
+    import base64
     frames_b64 = []
-    with tempfile.TemporaryDirectory() as temp_dir:
-        try:
-            cmd = ['ffmpeg', '-y', '-i', video_path, '-vf', 'fps=1', '-vframes', str(num_frames), f'{temp_dir}/%d.jpg']
-            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-            for i in range(1, num_frames + 1):
-                frame_path = f"{temp_dir}/{i}.jpg"
-                if os.path.exists(frame_path):
-                    with open(frame_path, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode('utf-8')
-                        frames_b64.append(b64)
-        except Exception as e:
-            print(f"Błąd ekstrakcji klatek wideo: {e}")
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print("Nie można otworzyć wideo przez cv2.")
+            return []
+        
+        # Przebieg 1: Zlicz klatki, ponieważ cap.get() i cap.set() nie działają poprawnie z plikami WebM.
+        total_frames = 0
+        while cap.grab():
+            total_frames += 1
+            
+        if total_frames == 0:
+            cap.release()
+            return []
+            
+        step = max(1, total_frames // num_frames)
+        
+        # Przebieg 2: Wyciągnij wybrane klatki sekwencyjnie.
+        cap.release()
+        cap = cv2.VideoCapture(video_path)
+        
+        current_frame = 0
+        target_frame = 0
+        frames_extracted = 0
+        
+        while cap.isOpened() and frames_extracted < num_frames:
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            if current_frame == target_frame:
+                success, buffer = cv2.imencode('.jpg', frame)
+                if success:
+                    b64 = base64.b64encode(buffer).decode('utf-8')
+                    frames_b64.append(b64)
+                    frames_extracted += 1
+                target_frame += step
+                
+            current_frame += 1
+                
+        cap.release()
+    except Exception as e:
+        print(f"Błąd ekstrakcji klatek wideo (cv2): {e}")
     return frames_b64
 
-def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: str = None, media_type: str = None) -> str:
+def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: str = None, media_type: str = None, events: list = None, raw_transcript: str = None) -> str:
     """
     Prowadzi konwersację z AI na temat podanej notatki.
     """
@@ -290,8 +372,18 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
         
         system_prompt = f"{CHAT_SYSTEM_PROMPT}\n\n[OBECNA TREŚĆ NOTATKI]:\n{note_content}"
         
-        if media_url and media_type and media_type.startswith("video"):
-            system_prompt += "\n\n[KONTEKST WIDEO]: Do tej notatki załączono nagranie wideo. Wraz z najnowszą wiadomością użytkownika otrzymałeś kilka klatek (zdjęć) wyciętych z tego filmu. Przeanalizuj je dokładnie, aby zrozumieć wizualny kontekst nagrania i móc na nim bazować w odpowiedziach."
+        if events:
+            events_str = json.dumps(events, ensure_ascii=False, indent=2)
+            system_prompt += f"\n\n[WYKRYTE WYDARZENIA W NOTATCE]:\n{events_str}"
+            
+        if raw_transcript:
+            system_prompt += f"\n\n[SUROWA TRANSKRYPCJA Z NAGRANIA (DLA PEŁNEGO KONTEKSTU)]:\n{raw_transcript}"
+            
+        if media_url and media_type:
+            if media_type.startswith("audio"):
+                system_prompt += "\n\n[KONTEKST AUDIO]: Ta notatka została automatycznie wygenerowana na podstawie nagrania głosowego (audio). Powyższa treść i wydarzenia pochodzą bezpośrednio z tego nagrania."
+            elif media_type.startswith("video"):
+                system_prompt += "\n\n[KONTEKST WIDEO]: Ta notatka została automatycznie wygenerowana na podstawie nagrania wideo. Wraz z najnowszą wiadomością użytkownika otrzymałeś kilka klatek (zdjęć) wyciętych z tego filmu. Przeanalizuj je dokładnie, aby zrozumieć wizualny kontekst nagrania i móc na nim bazować w odpowiedziach. Powyższa treść i wydarzenia pochodzą bezpośrednio z tego nagrania."
         
         messages = [{"role": "system", "content": system_prompt}]
         for msg in chat_history:
@@ -303,9 +395,9 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
                 try:
                     header, b64_data = media_url.split(",", 1)
                     video_bytes = base64.b64decode(b64_data)
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
-                        tmp.write(video_bytes)
-                        tmp_path = tmp.name
+                    tmp_path = tempfile.mktemp(suffix=".webm")
+                    with open(tmp_path, "wb") as f:
+                        f.write(video_bytes)
                     frames_b64 = extract_video_frames(tmp_path)
                     os.remove(tmp_path)
                 except Exception as e:
@@ -316,11 +408,11 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
                     frames_b64 = extract_video_frames(local_path)
             elif media_url.startswith("http"):
                 try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
-                        urllib.request.urlretrieve(media_url, tmp.name)
-                        tmp_path = tmp.name
+                    tmp_path = tempfile.mktemp(suffix=".webm")
+                    urllib.request.urlretrieve(media_url, tmp_path)
                     frames_b64 = extract_video_frames(tmp_path)
-                    os.remove(tmp_path)
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
                 except Exception as e:
                     print(f"Błąd pobierania wideo do analizy: {e}")
 

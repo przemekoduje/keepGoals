@@ -109,10 +109,16 @@ def process_media_and_cloud_sync_bg(
         if db and title and content:
             try:
                 doc_ref = db.collection("users").document(uid).collection("notes").document(note_id)
-                doc_ref.update({
+                update_data = {
                     "title": title,
                     "content": content
-                })
+                }
+                if "events" in ai_result:
+                    update_data["events"] = ai_result["events"]
+                if "raw_transcript" in ai_result:
+                    update_data["raw_transcript"] = ai_result["raw_transcript"]
+                
+                doc_ref.update(update_data)
                 print(f"[BG Process] Notatka {note_id} pomyślnie zaktualizowana o treść AI: '{title}'")
             except Exception as e:
                 print(f"[BG Process Error] Błąd aktualizacji Firestore dla notatki {note_id}: {e}")

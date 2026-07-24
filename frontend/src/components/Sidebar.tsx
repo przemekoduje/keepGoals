@@ -13,7 +13,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
   const { user, logout } = useAuth();
   const [isHovered, setIsHovered] = useState(false);
   const [ignoreHover, setIgnoreHover] = useState(false);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showFull = !isCollapsed || isHovered;
 

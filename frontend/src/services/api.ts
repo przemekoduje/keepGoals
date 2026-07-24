@@ -2,6 +2,13 @@ import { auth } from "../config/firebase";
 
 const API_URL = import.meta.env.VITE_API_URL || "";
 
+export interface NoteEvent {
+  title: string;
+  date_start: string;
+  date_end: string;
+  description?: string;
+}
+
 export interface Note {
   id: string;
   title?: string;
@@ -15,6 +22,7 @@ export interface Note {
   order?: number;
   is_deleted?: boolean;
   deleted_at?: string;
+  events?: NoteEvent[];
 }
 
 export interface UserSettings {

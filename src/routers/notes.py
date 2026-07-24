@@ -239,6 +239,8 @@ def ai_chat_note(
         note_content=note["content"], 
         chat_history=chat_request.messages,
         media_url=note.get("media_url"),
-        media_type=note.get("media_type")
+        media_type=note.get("media_type"),
+        events=note.get("events"),
+        raw_transcript=note.get("raw_transcript")
     )
     return {"response": ai_response}

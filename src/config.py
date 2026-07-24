@@ -17,7 +17,9 @@ def get_local_ip():
 class Settings:
     FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
     FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET", "")
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or ""
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or ""
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY") or ""
     
     # Podstawowe dozwolone adresy (HTTP i HTTPS)
     _origins = [
@@ -28,7 +30,8 @@ class Settings:
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
         "https://127.0.0.1:3000",
-        "https://127.0.0.1:5173"
+        "https://127.0.0.1:5173",
+        "https://thread-provoking-fragrant.ngrok-free.dev"
     ]
     
     # Dodaj lokalne IP jeśli jest dostępne (zarówno HTTP jak i HTTPS)
