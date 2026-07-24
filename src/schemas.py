@@ -10,6 +10,8 @@ class NoteBase(BaseModel):
     media_url: Optional[str] = Field(default=None, description="Opcjonalny URL do pliku multimedialnego (wideo/audio)")
     media_type: Optional[str] = Field(default=None, description="Typ mediów, np. 'audio', 'video'")
     order: int = Field(default=0, description="Kolejność sortowania na tablicy (rośnie)")
+    is_deleted: bool = Field(default=False, description="Czy notatka jest w koszu")
+    deleted_at: Optional[datetime] = Field(default=None, description="Kiedy notatka została usunięta (umieszczona w koszu)")
 
 class NoteCreate(NoteBase):
     pass
@@ -41,4 +43,17 @@ class EveningReflectionIn(BaseModel):
     completed_tasks: list[str] = Field(..., description="Lista zadań zrealizowanych")
     uncompleted_tasks: list[str] = Field(..., description="Lista zadań niezrealizowanych")
     avoided_habits: list[str] = Field(..., description="Lista pozytywnych zaniechań / nawyków do uniknięcia")
+
+class AIChatMessage(BaseModel):
+    role: str = Field(..., description="Rola: 'user' lub 'assistant'")
+    content: str = Field(..., description="Treść wiadomości")
+
+class AIChatRequest(BaseModel):
+    messages: List[AIChatMessage] = Field(..., description="Historia czatu dla danej notatki")
+
+class UserSettingsBase(BaseModel):
+    trash_retention_days: int = Field(default=30, description="Liczba dni po których notatki w koszu są trwale usuwane (0 oznacza Nigdy)")
+
+class UserSettingsResponse(UserSettingsBase):
+    pass
 

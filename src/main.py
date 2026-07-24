@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from src.config import settings
 from src.routers.notes import router as notes_router
 from src.routers.plans import router as plans_router
+from src.routers.users import router as users_router
 
 app = FastAPI(title="KeepGoals API")
 
@@ -25,4 +26,5 @@ def health_check():
 
 app.include_router(notes_router)
 app.include_router(plans_router)
+app.include_router(users_router)
 

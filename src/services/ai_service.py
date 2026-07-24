@@ -2,6 +2,8 @@ import os
 import json
 import tempfile
 import subprocess
+import base64
+import urllib.request
 from openai import OpenAI
 from src.config import settings
 
@@ -132,7 +134,7 @@ Zasady przetwarzania:
 2. Strukturyzacja (Krytyczne): Jeśli z kontekstu nagrania wynika wyliczanie elementów (np. lista zadań, zakupy, instrukcje krok po kroku, słowa "po pierwsze", "kolejna rzecz"), bezwzględnie sformatuj je jako interaktywną listę w standardzie GFM Markdown, używając znaczników `- [ ]`.
 3. Zwięzłość: Odrzuć zająknięcia, powtórzenia słów, dygresje i szum myślowy. Skup się na esencji przekazu.
 
-Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON (bez znaczników formatowania bloku kodu, takich jak ```json):
+Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON (bez znaczników formatowania bloku kodu, takich jako ```json):
 {
     "title": "Trafny, krótki tytuł notatki (max 5 słów)",
     "content": "Sformatowana treść notatki w standardzie Markdown (z rygorystycznym użyciem - [ ] dla wszelkich list i zadań)"
@@ -237,7 +239,7 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
     except Exception as e:
-        print(f"Błąd analizy mediów AI: {e}. Fallback do danych zastępczych.")
+        print(f"Błąd analizy mediów AI: {e}. Fallback do danych zastęych.")
         return {
             "title": "Notatka z nagrania (Offline)",
             "content": "Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu błędu połączenia."
@@ -250,3 +252,99 @@ def analyze_video_note(file_bytes: bytes, mime_type: str) -> dict:
     return _analyze_media(file_bytes, mime_type, VIDEO_SYSTEM_PROMPT)
 
 
+CHAT_SYSTEM_PROMPT = """Jesteś inteligentnym asystentem redakcyjnym notatki.
+Twoim zadaniem jest pomoc użytkownikowi w analizie, ulepszeniu lub modyfikacji obecnej treści notatki.
+Rozmawiasz z użytkownikiem o tej notatce. 
+Jeśli dojdziesz do wniosku, że należy zmodyfikować treść notatki lub użytkownik Cię o to poprosi, WYGENERUJ NOWĄ TREŚĆ NOTATKI obejmując ją bezwzględnie w znaczniki:
+<REWRITTEN_NOTE>
+Tutaj nowa treść notatki (w formacie Markdown)
+</REWRITTEN_NOTE>
+Jeśli nie modyfikujesz notatki, po prostu odpisz w czacie. Odpowiadaj zwięźle i profesjonalnie.
+"""
+
+def extract_video_frames(video_path: str, num_frames: int = 6) -> list[str]:
+    frames_b64 = []
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            cmd = ['ffmpeg', '-y', '-i', video_path, '-vf', 'fps=1', '-vframes', str(num_frames), f'{temp_dir}/%d.jpg']
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            for i in range(1, num_frames + 1):
+                frame_path = f"{temp_dir}/{i}.jpg"
+                if os.path.exists(frame_path):
+                    with open(frame_path, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode('utf-8')
+                        frames_b64.append(b64)
+        except Exception as e:
+            print(f"Błąd ekstrakcji klatek wideo: {e}")
+    return frames_b64
+
+def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: str = None, media_type: str = None) -> str:
+    """
+    Prowadzi konwersację z AI na temat podanej notatki.
+    """
+    if not settings.OPENAI_API_KEY:
+        return "To jest wersja demo czatu z AI, ponieważ brak klucza API. Wyobraź sobie, że odpowiadam na Twoje pytanie!\n\n<REWRITTEN_NOTE>\nTo jest przykładowa (zmieniona) treść notatki.\n</REWRITTEN_NOTE>"
+
+    try:
+        client = get_openai_client()
+        
+        system_prompt = f"{CHAT_SYSTEM_PROMPT}\n\n[OBECNA TREŚĆ NOTATKI]:\n{note_content}"
+        
+        if media_url and media_type and media_type.startswith("video"):
+            system_prompt += "\n\n[KONTEKST WIDEO]: Do tej notatki załączono nagranie wideo. Wraz z najnowszą wiadomością użytkownika otrzymałeś kilka klatek (zdjęć) wyciętych z tego filmu. Przeanalizuj je dokładnie, aby zrozumieć wizualny kontekst nagrania i móc na nim bazować w odpowiedziach."
+        
+        messages = [{"role": "system", "content": system_prompt}]
+        for msg in chat_history:
+            messages.append({"role": msg.role, "content": msg.content})
+
+        if media_url and media_type and media_type.startswith("video"):
+            frames_b64 = []
+            if media_url.startswith("data:"):
+                try:
+                    header, b64_data = media_url.split(",", 1)
+                    video_bytes = base64.b64decode(b64_data)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+                        tmp.write(video_bytes)
+                        tmp_path = tmp.name
+                    frames_b64 = extract_video_frames(tmp_path)
+                    os.remove(tmp_path)
+                except Exception as e:
+                    print(f"Błąd dekodowania wideo z base64: {e}")
+            elif media_url.startswith("/uploads/"):
+                local_path = "." + media_url
+                if os.path.exists(local_path):
+                    frames_b64 = extract_video_frames(local_path)
+            elif media_url.startswith("http"):
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+                        urllib.request.urlretrieve(media_url, tmp.name)
+                        tmp_path = tmp.name
+                    frames_b64 = extract_video_frames(tmp_path)
+                    os.remove(tmp_path)
+                except Exception as e:
+                    print(f"Błąd pobierania wideo do analizy: {e}")
+
+            if frames_b64:
+                last_user_idx = None
+                for i in reversed(range(len(messages))):
+                    if messages[i]["role"] == "user":
+                        last_user_idx = i
+                        break
+                if last_user_idx is not None:
+                    orig_text = messages[last_user_idx]["content"]
+                    content_list = [{"type": "text", "text": orig_text}]
+                    for b64 in frames_b64:
+                        content_list.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                        })
+                    messages[last_user_idx]["content"] = content_list
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Błąd OpenAI API w czacie notatki: {e}")
+        return "Przepraszam, wystąpił problem z serwerami AI. Spróbuj ponownie później."

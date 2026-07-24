@@ -23,13 +23,13 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onC
 
   const markdownComponents = {
     h1: ({ ...props }: any) => (
-      <h1 className="text-xl font-bold text-slate-900 dark:text-white mt-4 mb-2 tracking-tight" {...props} />
+      <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mt-4 mb-2 tracking-tight" {...props} />
     ),
     h2: ({ ...props }: any) => (
-      <h2 className="text-lg font-bold text-slate-900 dark:text-white mt-3 mb-2 tracking-tight" {...props} />
+      <h2 className="text-base font-medium text-slate-800 dark:text-slate-100 mt-3 mb-2 tracking-tight" {...props} />
     ),
     h3: ({ ...props }: any) => (
-      <h3 className="text-base font-bold text-slate-900 dark:text-white mt-2 mb-1 tracking-tight" {...props} />
+      <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100 mt-2 mb-1 tracking-tight" {...props} />
     ),
     p: ({ ...props }: any) => (
       <p className="mb-3 text-slate-700 dark:text-slate-300 last:mb-0" {...props} />
@@ -61,7 +61,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onC
       return <input {...props} />;
     },
     strong: ({ ...props }: any) => (
-      <strong className="font-extrabold text-slate-950 dark:text-white" {...props} />
+      <strong className="font-semibold text-slate-800 dark:text-slate-100" {...props} />
     ),
   };
 
@@ -119,18 +119,20 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onC
         {activeItems.length > 0 && (
           <div className="space-y-2">
             {activeItems.map((item) => (
-              <label
+              <div
                 key={item.lineIndex}
-                className="flex items-center space-x-2.5 cursor-pointer select-none group text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white transition-colors"
+                className="flex items-start space-x-2.5 group text-slate-700 dark:text-slate-200 transition-colors"
               >
-                <input
-                  type="checkbox"
-                  checked={false}
-                  onChange={() => toggleItem(item.lineIndex, false)}
-                  className="rounded border-slate-350 dark:border-slate-600 text-slate-900 dark:text-slate-100 h-4.5 w-4.5 accent-slate-900 dark:accent-slate-100 transition-all cursor-pointer"
-                />
-                <span className="leading-none">{item.text}</span>
-              </label>
+                <label onClick={(e) => e.stopPropagation()} className="cursor-pointer mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => toggleItem(item.lineIndex, false)}
+                    className="rounded border-slate-350 dark:border-slate-600 text-slate-900 dark:text-slate-100 h-4.5 w-4.5 accent-slate-900 dark:accent-slate-100 transition-all cursor-pointer"
+                  />
+                </label>
+                <span className="leading-normal cursor-text flex-1">{item.text}</span>
+              </div>
             ))}
           </div>
         )}
@@ -138,23 +140,25 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onC
         {/* Divider and completed items */}
         {completedItems.length > 0 && (
           <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-700/50">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">
               Wykreślone elementy ({completedItems.length})
             </div>
             <div className="space-y-2">
               {completedItems.map((item) => (
-                <label
+                <div
                   key={item.lineIndex}
-                  className="flex items-center space-x-2.5 cursor-pointer select-none group text-slate-400 dark:text-slate-550 hover:text-slate-600 dark:hover:text-slate-350 transition-colors"
+                  className="flex items-start space-x-2.5 group text-slate-400 dark:text-slate-550 transition-colors"
                 >
-                  <input
-                    type="checkbox"
-                    checked={true}
-                    onChange={() => toggleItem(item.lineIndex, true)}
-                    className="rounded border-slate-300 dark:border-slate-700 text-slate-400 h-4.5 w-4.5 accent-slate-300 dark:accent-slate-700 transition-all cursor-pointer"
-                  />
-                  <span className="line-through leading-none">{item.text}</span>
-                </label>
+                  <label onClick={(e) => e.stopPropagation()} className="cursor-pointer mt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      onChange={() => toggleItem(item.lineIndex, true)}
+                      className="rounded border-slate-300 dark:border-slate-700 text-slate-400 h-4.5 w-4.5 accent-slate-300 dark:accent-slate-700 transition-all cursor-pointer"
+                    />
+                  </label>
+                  <span className="line-through leading-normal cursor-text flex-1">{item.text}</span>
+                </div>
               ))}
             </div>
           </div>

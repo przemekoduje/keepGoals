@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Palette, Bell, Users, Image, Archive, MoreVertical, Pin, Check, Trash2, Type, Tag, GripHorizontal } from "lucide-react";
+import { Palette, Bell, Users, Image, Archive, MoreVertical, Pin, Check, Trash2, Type, Tag, GripHorizontal, Play, Headphones } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { MarkdownRenderer } from "./MarkdownRenderer";
@@ -15,6 +15,7 @@ interface NoteCardProps {
   onDelete?: (noteId: string) => void;
   onUpdateTitle?: (noteId: string, newTitle: string) => void;
   onUpdateLabel?: (noteId: string, newLabel: string) => void;
+  onClick?: (noteId: string) => void;
 }
 
 export const NoteCard: React.FC<NoteCardProps> = ({
@@ -25,6 +26,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   onDelete,
   onUpdateTitle,
   onUpdateLabel,
+  onClick,
 }) => {
   const isAudio = note.media_type?.startsWith("audio/");
   const isVideo = note.media_type?.startsWith("video/");
@@ -53,7 +55,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     <div 
       ref={setNodeRef}
       style={style}
-      className={`break-inside-avoid mb-4 group relative bg-white dark:bg-[#202124] rounded-xl border ${isDragging ? 'border-blue-500 shadow-xl opacity-90' : 'border-slate-200/60 dark:border-slate-700/60 shadow-sm hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600'} transition-all duration-200 overflow-hidden p-5 text-slate-800 dark:text-slate-100 flex flex-col justify-between`}
+      onClick={() => onClick?.(note.id)}
+      className={`group relative bg-white dark:bg-[#202124] rounded-xl border ${isDragging ? 'border-blue-500 shadow-xl opacity-90' : 'border-slate-200 dark:border-slate-700 hover:shadow-md'} transition-all duration-200 overflow-hidden p-4 sm:p-5 text-slate-800 dark:text-slate-100 flex flex-col justify-between h-fit w-full ${onClick ? 'cursor-pointer' : ''}`}
     >
       {/* Drag Handle */}
       <div 
@@ -67,6 +70,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       {/* Top Left Selection Check */}
       <button 
         type="button"
+        onClick={(e) => e.stopPropagation()}
         className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-white dark:bg-[#202124] hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full shadow-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer z-10"
         title="Wybierz"
       >
@@ -93,7 +97,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       <div className="w-full">
         {/* Header containing meta */}
         <div className="flex justify-between items-start mb-2.5 pr-6">
-          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-slate-100 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300 rounded-md">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 px-2 py-0.5 rounded-md">
             {note.note_type === 'daily_morning' || note.note_type === 'generic' ? 'Szybka Notatka' : note.note_type}
           </span>
           <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
@@ -103,56 +107,42 @@ export const NoteCard: React.FC<NoteCardProps> = ({
 
         {/* Title */}
         {note.title && (
-          <h3 className="text-base font-bold mb-1.5 text-slate-900 dark:text-white leading-snug">
+          <h3 className="text-base font-medium mb-2 text-slate-800 dark:text-slate-100 leading-snug">
             {note.title}
           </h3>
         )}
 
-        {/* Media Player */}
+        {/* Media Indicator */}
         {note.media_url && (
-          <div className="mb-3 w-full overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
-            {mediaError ? (
-              <div className="p-3 text-[11px] text-slate-400 dark:text-slate-500 italic text-center">
-                Plik multimedialny zapisany na innym komputerze (niedostępny lokalnie).
+          <div className="mb-3 flex items-center space-x-2 text-slate-400 dark:text-slate-500">
+            {isAudio && (
+              <div title="Notatka audio" className="inline-flex items-center">
+                <Headphones className="w-5 h-5" />
               </div>
-            ) : (
-              <>
-                {isAudio && (
-                  <audio 
-                    controls 
-                    className="w-full h-10 outline-none" 
-                    src={`${API_URL}${note.media_url}`}
-                    onError={() => setMediaError(true)}
-                  >
-                    Twoja przeglądarka nie obsługuje odtwarzacza audio.
-                  </audio>
-                )}
-                {isVideo && (
-                  <video 
-                    controls 
-                    className="w-full h-auto max-h-48 object-cover outline-none" 
-                    src={`${API_URL}${note.media_url}`}
-                    onError={() => setMediaError(true)}
-                  >
-                    Twoja przeglądarka nie obsługuje odtwarzacza wideo.
-                  </video>
-                )}
-              </>
+            )}
+            {isVideo && (
+              <div title="Notatka wideo" className="inline-flex items-center">
+                <Play className="w-5 h-5 fill-current" />
+              </div>
             )}
           </div>
         )}
 
-        {/* Content with line-clamp-6 for long notes on mobile */}
-        <div className="prose prose-sm dark:prose-invert max-w-none text-slate-600 dark:text-slate-300 line-clamp-6 overflow-hidden">
+        {/* Content with max-height and fade-out for long notes on grid */}
+        <div className="relative prose prose-sm dark:prose-invert max-w-none text-slate-600 dark:text-slate-300 max-h-[360px] overflow-hidden">
           <MarkdownRenderer
             content={note.content}
             onChange={(newContent) => handleNoteContentChange(note.id, newContent)}
           />
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white dark:from-[#202124] to-transparent pointer-events-none"></div>
         </div>
       </div>
 
       {/* Bottom Hover Toolbar */}
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+      <div 
+        onClick={(e) => e.stopPropagation()}
+        className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/50"
+      >
         <div className="flex items-center space-x-1">
           <button type="button" className="hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer" title="Zmień kolor">
             <Palette className="w-3.5 h-3.5" />
@@ -237,7 +227,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
 
 export const NoteCardSkeleton: React.FC = () => {
   return (
-    <div className="break-inside-avoid mb-4 bg-white dark:bg-[#202124] rounded-xl border border-slate-200/60 dark:border-slate-700/60 p-5 flex flex-col justify-between animate-pulse h-40">
+    <div className="bg-white dark:bg-[#202124] rounded-xl border border-slate-200/60 dark:border-slate-700/60 p-5 flex flex-col justify-between animate-pulse h-40 w-full">
       <div className="w-full">
         {/* Header Skeleton */}
         <div className="flex justify-between items-start mb-4 pr-6">

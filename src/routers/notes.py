@@ -3,9 +3,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from src.auth import verify_token
 from src.database import get_db
-from src.schemas import NoteCreate, NoteUpdate, NoteResponse, NoteReorderRequest
-from src.crud import create_note, get_notes, get_note, update_note, delete_note, reorder_notes
-from src.services.ai_service import analyze_audio_note, analyze_video_note
+from src.schemas import NoteCreate, NoteUpdate, NoteResponse, NoteReorderRequest, AIChatRequest
+from src.crud import create_note, get_notes, get_note, update_note, delete_note, reorder_notes, get_trash_notes, restore_note, hard_delete_note
+from src.services.ai_service import analyze_audio_note, analyze_video_note, chat_with_ai_about_note
 from src.services.storage_service import save_media_file_local, sync_media_to_cloud_bg, process_media_and_cloud_sync_bg
 
 router = APIRouter(prefix="/api/v1/notes", tags=["notes"])
@@ -106,6 +106,14 @@ def read_notes(
     uid = user["uid"]
     return get_notes(db, uid)
 
+@router.get("/trash", response_model=List[NoteResponse])
+def read_trash_notes(
+    user: dict = Depends(verify_token),
+    db = Depends(get_db)
+):
+    uid = user["uid"]
+    return get_trash_notes(db, uid)
+
 @router.get("/{note_id}", response_model=NoteResponse)
 def read_single_note(
     note_id: str,
@@ -181,3 +189,56 @@ def delete_single_note(
             }
         )
     return {"message": "Notatka została pomyślnie usunięta."}
+
+@router.put("/{note_id}/restore")
+def restore_deleted_note(
+    note_id: str,
+    user: dict = Depends(verify_token),
+    db = Depends(get_db)
+):
+    uid = user["uid"]
+    success = restore_note(db, uid, note_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": f"Notatka o ID {note_id} nie została znaleziona."}
+        )
+    return {"message": "Notatka została przywrócona."}
+
+@router.delete("/{note_id}/hard")
+def permanently_delete_note(
+    note_id: str,
+    user: dict = Depends(verify_token),
+    db = Depends(get_db)
+):
+    uid = user["uid"]
+    success = hard_delete_note(db, uid, note_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": f"Notatka o ID {note_id} nie została znaleziona."}
+        )
+    return {"message": "Notatka została trwale usunięta."}
+
+@router.post("/{note_id}/ai-chat")
+def ai_chat_note(
+    note_id: str,
+    chat_request: AIChatRequest,
+    user: dict = Depends(verify_token),
+    db = Depends(get_db)
+):
+    uid = user["uid"]
+    note = get_note(db, uid, note_id)
+    if not note:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": f"Notatka o ID {note_id} nie została znaleziona."}
+        )
+    
+    ai_response = chat_with_ai_about_note(
+        note_content=note["content"], 
+        chat_history=chat_request.messages,
+        media_url=note.get("media_url"),
+        media_type=note.get("media_type")
+    )
+    return {"response": ai_response}

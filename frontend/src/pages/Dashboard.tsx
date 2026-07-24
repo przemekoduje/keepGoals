@@ -7,6 +7,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { KeepInputBar } from "../components/KeepInputBar";
 import { NoteCard, NoteCardSkeleton } from "../components/NoteCard";
+import { NoteModal } from "../components/NoteModal";
 import type { MainLayoutContextType } from "../layouts/MainLayout";
 
 export const Dashboard: React.FC = () => {
@@ -18,6 +19,9 @@ export const Dashboard: React.FC = () => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+
+  const selectedNote = notes.find((n) => n.id === selectedNoteId) || null;
 
   const loadNotes = () => {
     setLoading(true);
@@ -136,10 +140,11 @@ export const Dashboard: React.FC = () => {
   const pinnedNotes = filteredNotes.filter((n) => n.is_pinned);
   const otherNotes = filteredNotes.filter((n) => !n.is_pinned);
 
-  // Układ Masonry (kolumnowy) by luki naturalnie się wypełniały, tak jak w Google Keep
+  // Zmieniono na CSS Grid wypełniający najpierw rzędy (od lewej do prawej),
+  // items-start sprawia, że karty nie rozciągają się w pionie.
   const gridClass = isGridView
-    ? "columns-2 sm:columns-2 md:columns-3 lg:columns-4 gap-3 sm:gap-4 space-y-3 sm:space-y-4"
-    : "columns-1 max-w-2xl mx-auto gap-4 space-y-4";
+    ? "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4 items-start"
+    : "flex flex-col max-w-2xl mx-auto gap-4";
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -177,7 +182,7 @@ export const Dashboard: React.FC = () => {
   };
 
   return (
-    <main className="max-w-6xl mx-auto p-4 sm:p-6 md:p-8">
+    <main className="w-full max-w-[1800px] mx-auto p-4 sm:p-6 md:p-8">
       {/* Keep input bar mounted at the top center */}
       <KeepInputBar onSuccess={loadNotes} />
 
@@ -222,6 +227,7 @@ export const Dashboard: React.FC = () => {
                         onDelete={handleDeleteNote}
                         onUpdateTitle={handleUpdateTitle}
                         onUpdateLabel={handleUpdateLabel}
+                        onClick={(id) => setSelectedNoteId(id)}
                       />
                     ))}
                   </SortableContext>
@@ -249,6 +255,7 @@ export const Dashboard: React.FC = () => {
                         onDelete={handleDeleteNote}
                         onUpdateTitle={handleUpdateTitle}
                         onUpdateLabel={handleUpdateLabel}
+                        onClick={(id) => setSelectedNoteId(id)}
                       />
                     ))}
                   </SortableContext>
@@ -257,6 +264,20 @@ export const Dashboard: React.FC = () => {
             )}
           </DndContext>
         </section>
+      )}
+
+      {/* Note Modal */}
+      {selectedNote && (
+        <NoteModal
+          note={selectedNote}
+          onClose={() => setSelectedNoteId(null)}
+          formatNoteDate={formatNoteDate}
+          handleNoteContentChange={handleNoteContentChange}
+          onTogglePin={handleTogglePin}
+          onDelete={handleDeleteNote}
+          onUpdateTitle={handleUpdateTitle}
+          onUpdateLabel={handleUpdateLabel}
+        />
       )}
     </main>
   );

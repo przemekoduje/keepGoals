@@ -19,6 +19,7 @@ export interface MainLayoutContextType {
 
 export const MainLayout: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isGridView, setIsGridView] = useState(true);
   const [isAudioRecorderOpen, setIsAudioRecorderOpen] = useState(false);
@@ -29,8 +30,11 @@ export const MainLayout: React.FC = () => {
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-100">
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex h-full flex-shrink-0">
-        <Sidebar />
+      <div className={`hidden md:flex h-full flex-shrink-0 transition-all duration-200 relative ${isSidebarCollapsed ? 'w-[72px]' : 'w-64'}`}>
+        <Sidebar 
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        />
       </div>
 
       {/* Mobile Drawer Sidebar */}
@@ -54,7 +58,7 @@ export const MainLayout: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#f5f5f7] dark:bg-[#1d1d1f] relative">
+      <div className="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-800 relative">
         {/* Mobile Top Navigation Bar */}
         <MobileTopBar
           onOpenMenu={() => setMobileMenuOpen(true)}
