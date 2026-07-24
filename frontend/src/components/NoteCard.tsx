@@ -141,32 +141,30 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         {note.events && note.events.filter((_, i) => !dismissedEvents.includes(i)).length > 0 && (
           <div className="mt-3 space-y-2 relative z-10">
             {note.events.map((event, idx) => dismissedEvents.includes(idx) ? null : (
-              <div key={idx} className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 rounded-lg p-2.5 flex flex-col space-y-1.5">
-                <div className="flex items-start justify-between">
+              <div key={idx} className="group/event relative bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 rounded-lg p-2.5 flex flex-col space-y-1.5">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setDismissedEvents(prev => [...prev, idx]); }}
+                  className="absolute top-1.5 right-1.5 p-0.5 rounded opacity-0 group-hover/event:opacity-100 transition-opacity bg-blue-100 dark:bg-blue-800/60 text-blue-400 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200"
+                  title="Usuń propozycję"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+                <div className="flex items-start justify-between pr-5">
                   <div className="flex items-center space-x-1.5 text-blue-700 dark:text-blue-300 font-medium text-sm min-w-0">
                     <CalendarDays className="w-4 h-4 flex-shrink-0" />
                     <span className="line-clamp-1">{event.title}</span>
                   </div>
-                  <div className="flex items-center gap-1 ml-2 flex-shrink-0">
-                    <a 
-                      href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.date_start.replace(/[-:]/g, "")}/${event.date_end.replace(/[-:]/g, "")}${event.description ? `&details=${encodeURIComponent(event.description)}` : ""}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs font-medium bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-800/50 text-blue-600 dark:text-blue-400 px-2 py-1 rounded transition-colors whitespace-nowrap"
-                      title="Dodaj do kalendarza Google"
-                    >
-                      Dodaj
-                    </a>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setDismissedEvents(prev => [...prev, idx]); }}
-                      className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50 text-blue-400 dark:text-blue-500 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
-                      title="Usuń propozycję"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <a 
+                    href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.date_start.replace(/[-:]/g, "")}/${event.date_end.replace(/[-:]/g, "")}${event.description ? `&details=${encodeURIComponent(event.description)}` : ""}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs font-medium bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-800/50 text-blue-600 dark:text-blue-400 px-2 py-1 rounded transition-colors whitespace-nowrap ml-2"
+                    title="Dodaj do kalendarza Google"
+                  >
+                    Dodaj
+                  </a>
                 </div>
                 <div className="text-xs text-blue-600/80 dark:text-blue-400/80 pl-5">
                   {new Date(event.date_start).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}
