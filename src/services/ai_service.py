@@ -364,11 +364,13 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
     """
     Prowadzi konwersację z AI na temat podanej notatki.
     """
-    if not settings.OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
         return "To jest wersja demo czatu z AI, ponieważ brak klucza API. Wyobraź sobie, że odpowiadam na Twoje pytanie!\n\n<REWRITTEN_NOTE>\nTo jest przykładowa (zmieniona) treść notatki.\n</REWRITTEN_NOTE>"
 
     try:
-        client = get_openai_client()
+        client, model = get_ai_client_and_model("llm")
+        # Przytnij historię do ostatnich 10 wiadomości, aby ograniczyć koszty tokenów
+        trimmed_history = chat_history[-10:]
         
         system_prompt = f"{CHAT_SYSTEM_PROMPT}\n\n[OBECNA TREŚĆ NOTATKI]:\n{note_content}"
         
@@ -386,10 +388,11 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
                 system_prompt += "\n\n[KONTEKST WIDEO]: Ta notatka została automatycznie wygenerowana na podstawie nagrania wideo. Wraz z najnowszą wiadomością użytkownika otrzymałeś kilka klatek (zdjęć) wyciętych z tego filmu. Przeanalizuj je dokładnie, aby zrozumieć wizualny kontekst nagrania i móc na nim bazować w odpowiedziach. Powyższa treść i wydarzenia pochodzą bezpośrednio z tego nagrania."
         
         messages = [{"role": "system", "content": system_prompt}]
-        for msg in chat_history:
+        for msg in trimmed_history:
             messages.append({"role": msg.role, "content": msg.content})
 
-        if media_url and media_type and media_type.startswith("video"):
+        # Klatki wideo tylko dla OpenAI (modele Groq są wyłącznie tekstowe)
+        if media_url and media_type and media_type.startswith("video") and not settings.GROQ_API_KEY:
             frames_b64 = []
             if media_url.startswith("data:"):
                 try:
@@ -433,7 +436,7 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
                     messages[last_user_idx]["content"] = content_list
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=messages
         )
         return response.choices[0].message.content
