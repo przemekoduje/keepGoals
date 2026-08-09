@@ -152,20 +152,27 @@ Zacznij dzień od najważniejszego zadania jako pierwszego (zasada *Eat That Fro
 """
 
 
-audio_system_prompt = """Jesteś wybitnym asystentem redakcyjnym. Twoim zadaniem jest przetworzenie załączonego nagrania głosowego na wysoce ustrukturyzowaną notatkę tekstową.
+audio_system_prompt = """Jesteś wybitnym asystentem redakcyjnym. Twoim zadaniem jest przetworzenie transkrypcji nagrania głosowego na ustrukturyzowaną notatkę z inteligentnym streszczeniem.
+
+KRYTYCZNA ZASADA: Pole `content` NIE MOŻE zawierać pełnej, dosłownej transkrypcji nagrania słowo w słowo. Zamiast tego powinno zawierać profesjonalne, zwięzłe i przejrzyste STRESZCZENIE poddane obróbce AI.
 
 Zasady przetwarzania:
-1. Korekta: Popraw błędy gramatyczne, składniowe i stylistyczne. Zmień luźny język mówiony na klarowny, profesjonalny i formalny tekst pisany.
-2. Strukturyzacja (Krytyczne): Notatka w polu `content` MUSI składać się z dwóch części:
-   a) Krótkie opisowe streszczenie (narracyjna relacja) nagranej rozmowy, opisujące kontekst, omawiane tematy i ogólne ustalenia.
-   b) Następnie (po nagłówku, np. "### Zadania do wykonania" lub "### Ustalenia") lista zadań / akcji do podjęcia, sformatowana za pomocą checkboxów `- [ ]` w standardzie GFM Markdown.
-3. Zwięzłość: Odrzuć zająknięcia, powtórzenia słów, dygresje i szum myślowy. Skup się na esencji przekazu.
-4. Wydarzenia terminowe: Wykryj w treści wszelkie propozycje dat, terminów, spotkań czy przypomnień w czasie. Załóż, że bieżący rok to bieżący rok kalendarzowy (jeśli nie podano inaczej).
+1. Treść notatki w `content`: Zredaguj eleganckie podsumowanie w języku polskim. Wyłów z nagrania kluczowe wątki i ustrukturyzuj je w sekcje, wyraźnie zaznaczając:
+   - **Główny temat** (krótkie streszczenie o co chodzi)
+   - **Kluczowe ustalenia / fakty**
+   - **Osoby** (kto występuje lub kogo wymieniono)
+   - **Miejsca i Projekty** (jeśli występują)
+   - **Wydarzenia lub terminy**
+2. Sekcja zadań (po streszczeniu): Po streszczeniu dodaj sekcję „### Zadania i Ustalenia" z listą konkretnych zadań do zrobienia wyekstrahowanych z nagrania, sformatowaną za pomocą checkboxów `- [ ]` w standardzie GFM Markdown.
+3. Tytuł: Utwórz trafny, krótki tytuł notatki (max 5-6 słów).
+4. Daty i terminy: Wykryj w treści wszelkie propozycje dat, terminów, spotkań. Załóż bieżący rok kalendarzowy jeśli nie podano inaczej.
+5. Wykrywanie osób do delegacji: Wykryj wszystkie imiona, nazwiska lub adresy e-mail osób wymienionych w nagraniu. Zwróć je w polu `suggested_assignees`. Jeśli w nagraniu sugerowane jest zlecenie komuś zadania (np. "Krzysiek musi to zrobić"), koniecznie dodaj tę osobę do `suggested_assignees`, aby aplikacja mogła zasugerować przekazanie notatki. Jeśli brak – zwróć [].
 
 Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON (bez znaczników formatowania bloku kodu, takich jako ```json):
 {
-    "title": "Trafny, krótki tytuł notatki (max 5 słów)",
-    "content": "Tutaj wpisz krótki, kilkuzdaniowy opisowy wstęp relacjonujący przebieg rozmowy i jej kontekst.\\n\\n### Zadania do wykonania\\n- [ ] Pierwsze zadanie do wykonania\\n- [ ] Drugie zadanie do wykonania",
+    "title": "Trafny, krótki tytuł notatki (max 5-6 słów)",
+    "content": "# Streszczenie i Kluczowe Wątki\\n\\n[Tutaj Twoje zredagowane podsumowanie z podziałem na sekcje i wyłowieniem kluczowych elementów: daty, osoby, plany, miejsca]\\n\\n### Zadania i Ustalenia\\n- [ ] Pierwsze zadanie do zrobienia\\n- [ ] Drugie zadanie do zrobienia",
+    "suggested_assignees": ["Imię Osoby 1", "email@example.com"],
     "events": [
         {
             "title": "Krótki tytuł wydarzenia",
@@ -177,15 +184,29 @@ Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON (bez znaczników formatow
 }
 """
 
-VIDEO_SYSTEM_PROMPT = """Jesteś wybitnym asystentem produktywności. Przeanalizuj załączone nagranie wideo.
-Twoim celem jest wyciągnięcie kluczowych informacji i przekształcenie ich w zwięzłą, czytelną notatkę oraz wyodrębnienie wszelkich omawianych dat i spotkań.
+VIDEO_SYSTEM_PROMPT = """Jesteś wybitnym asystentem produktywności. Przeanalizuj transkrypcję załączonego nagrania wideo i przygotuj ustrukturyzowaną notatkę z inteligentnym streszczeniem.
+
+KRYTYCZNA ZASADA: Pole `content` NIE MOŻE zawierać pełnej, dosłownej transkrypcji nagrania słowo w słowo. Zamiast tego powinno zawierać profesjonalne, zwięzłe i przejrzyste STRESZCZENIE poddane obróbce AI.
+
+Zasady przetwarzania:
+1. Treść notatki w `content`: Zredaguj eleganckie podsumowanie w języku polskim. Wyłów z nagrania kluczowe wątki i ustrukturyzuj je w sekcje, wyraźnie zaznaczając:
+   - **Główny temat** (krótkie streszczenie o co chodzi)
+   - **Kluczowe ustalenia / fakty**
+   - **Osoby** (kto występuje lub kogo wymieniono)
+   - **Miejsca i Projekty** (jeśli występują)
+   - **Wydarzenia lub terminy**
+2. Sekcja zadań (po streszczeniu): Po streszczeniu dodaj sekcję „### Zadania i Ustalenia" z listą konkretnych zadań do zrobienia wyekstrahowanych z nagrania, sformatowaną za pomocą checkboxów `- [ ]` w standardzie GFM Markdown.
+3. Tytuł: Utwórz krótki, chwytliwy tytuł podsumowujący główny wątek (max 5-6 słów).
+4. Wykrywanie osób do delegacji: Wykryj wszystkie imiona, nazwiska lub adresy e-mail osób wymienionych w nagraniu. Zwróć je w polu `suggested_assignees`. Jeśli w nagraniu sugerowane jest zlecenie komuś zadania, koniecznie dodaj tę osobę do `suggested_assignees`, aby aplikacja mogła zasugerować przekazanie notatki. Jeśli brak – zwróć [].
+5. Daty i terminy: Wykryj daty, terminy i spotkania. Użyj formatu ISO-8601.
 
 Zwróć odpowiedź WYŁĄCZNIE jako czysty obiekt JSON, bez żadnych dodatkowych komentarzy ani formatowania blokowego (typu ```json).
 
 Wymagany schemat JSON:
 {
-    "title": "Krótki, chwytliwy tytuł podsumowujący główny wątek (max 5-6 słów).",
-    "content": "Tutaj wpisz krótki, kilkuzdaniowy opisowy wstęp relacjonujący przebieg nagrania wideo i jego kontekst.\\n\\n### Zadania do wykonania\\n- [ ] Pierwsze zadanie do wykonania\\n- [ ] Drugie zadanie do wykonania",
+    "title": "Krótki, chwytliwy tytuł (max 5-6 słów).",
+    "content": "# Streszczenie i Kluczowe Wątki\\n\\n[Tutaj Twoje zredagowane podsumowanie z podziałem na sekcje i wyłowieniem kluczowych elementów: daty, osoby, plany, miejsca]\\n\\n### Zadania i Ustalenia\\n- [ ] Pierwsze zadanie do zrobienia\\n- [ ] Drugie zadanie do zrobienia",
+    "suggested_assignees": ["Imię Osoby", "email@example.com"],
     "events": [
         {
             "title": "Tytuł spotkania / wydarzenia",
@@ -242,7 +263,9 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
             with open(temp_path, "rb") as audio_file:
                 transcript = whisper_client.audio.transcriptions.create(
                     model=whisper_model,
-                    file=audio_file
+                    file=audio_file,
+                    language="pl",
+                    prompt="Polska narada budowlana, geotechnika, fundamenty, palowanie, dokumentacja techniczna, harmonogram prac, notatki projektowe, cele biznesowe."
                 )
                 
             transcribed_text = transcript.text
@@ -288,17 +311,23 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
             "content": f"Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu błędu: {e}"
         }
 
-def analyze_audio_note(file_bytes: bytes, mime_type: str) -> dict:
+def analyze_audio_note(file_bytes: bytes, mime_type: str, user_timezone: str = "Europe/Warsaw", team_members: list = None) -> dict:
     from datetime import datetime
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    time_context = f"\nBieżący czas (punkt odniesienia): {now_str}\n"
-    return _analyze_media(file_bytes, mime_type, audio_system_prompt + time_context)
+    context = f"\nBieżący czas (punkt odniesienia): {now_str} (Strefa czasowa: {user_timezone})\n"
+    if team_members:
+        context += f"Oto lista aktualnych członków zespołu użytkownika (adresy email lub identyfikatory): {', '.join(team_members)}.\n"
+        context += "Jeśli w nagraniu padają imiona (np. Ola, Marek) współpracowników, postaraj się dopasować je do tej listy i w 'suggested_assignees' zwróć ich dokładny adres z powyższej listy zamiast samego imienia. Jeśli kogoś nie ma na liście, zwróć jego imię.\n"
+    return _analyze_media(file_bytes, mime_type, audio_system_prompt + context)
 
-def analyze_video_note(file_bytes: bytes, mime_type: str) -> dict:
+def analyze_video_note(file_bytes: bytes, mime_type: str, user_timezone: str = "Europe/Warsaw", team_members: list = None) -> dict:
     from datetime import datetime
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    time_context = f"\nBieżący czas (punkt odniesienia): {now_str}\n"
-    return _analyze_media(file_bytes, mime_type, VIDEO_SYSTEM_PROMPT + time_context)
+    context = f"\nBieżący czas (punkt odniesienia): {now_str} (Strefa czasowa: {user_timezone})\n"
+    if team_members:
+        context += f"Oto lista aktualnych członków zespołu użytkownika (adresy email lub identyfikatory): {', '.join(team_members)}.\n"
+        context += "Jeśli w nagraniu padają imiona (np. Ola, Marek) współpracowników, postaraj się dopasować je do tej listy i w 'suggested_assignees' zwróć ich dokładny adres z powyższej listy zamiast samego imienia. Jeśli kogoś nie ma na liście, zwróć jego imię.\n"
+    return _analyze_media(file_bytes, mime_type, VIDEO_SYSTEM_PROMPT + context)
 
 
 CHAT_SYSTEM_PROMPT = """Jesteś inteligentnym asystentem redakcyjnym notatki.
@@ -443,3 +472,27 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
     except Exception as e:
         print(f"Błąd OpenAI API w czacie notatki: {e}")
         return "Przepraszam, wystąpił problem z serwerami AI. Spróbuj ponownie później."
+
+def generate_handoff_summary(note_content: str, delegate_name: str) -> str:
+    """
+    Analizuje treść notatki i generuje zwięzłe podsumowanie zadań przeznaczonych dla konkretnego delegata.
+    """
+    try:
+        client, model = get_ai_client_and_model("llm")
+        prompt = (
+            f"Przeanalizuj poniższą notatkę i przygotuj zwięzłe, uporządkowane podsumowanie zadań oraz wątków, "
+            f"które dotyczą wyłącznie osoby o imieniu/nazwie '{delegate_name}'. "
+            f"Stwórz jasną listę punktów do zrealizowania dla tej osoby. "
+            f"Nie dodawaj wstępów ani zbędnych wyjaśnień, sformatuj tekst czytelnie w Markdown."
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": note_content}
+            ]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Błąd OpenAI/Groq API w generowaniu handoff summary: {e}")
+        return f"Zadanie przekazane do {delegate_name}. Brak dodatkowego podsumowania."

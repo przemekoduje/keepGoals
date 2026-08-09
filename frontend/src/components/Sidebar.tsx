@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu } from 'lucide-react';
+import { Menu, FolderKanban, Share2 } from 'lucide-react';
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -51,8 +51,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
 
   const navItemClass = ({ isActive }: { isActive: boolean }) => {
     const baseClass = `flex items-center py-3 font-semibold transition-all duration-200 group text-sm ${showFull ? 'px-4 space-x-3 rounded-r-full' : 'justify-center mx-2 rounded-full'}`;
-    const activeClass = "bg-[#feefc3] dark:bg-[#41331c] text-slate-900 dark:text-amber-100";
-    const inactiveClass = "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800";
+    const activeClass = "bg-[#D0D6B3] text-[#143109] font-bold shadow-sm";
+    const inactiveClass = "text-[#143109]/70 hover:bg-[#EFEFEF]";
     
     return `${baseClass} ${isActive ? activeClass : inactiveClass}`;
   };
@@ -61,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
     <div 
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`h-full bg-white dark:bg-slate-800 border-r border-slate-100 dark:border-slate-700 flex flex-col py-4 transition-all duration-200 z-40 ${
+      className={`h-full bg-[#F7F7F7] border-r border-[#AAAE7F]/30 flex flex-col py-4 transition-all duration-200 z-40 ${
         isCollapsed 
           ? (isHovered ? 'w-64 absolute shadow-2xl left-0 top-0 bottom-0' : 'w-[72px] relative') 
           : 'w-64 relative'
@@ -98,11 +98,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
             </NavLink>
           </li>
           <li>
-            <NavLink to="/goals" className={navItemClass} onClick={onNavigate}>
+            <div 
+              className={`flex items-center py-3 font-semibold transition-all duration-200 text-sm opacity-50 cursor-not-allowed text-slate-400 dark:text-slate-500 ${showFull ? 'px-4 space-x-3 rounded-r-full' : 'justify-center mx-2 rounded-full'}`}
+              title="Goals module coming soon"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 flex-shrink-0">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
               </svg>
-              {showFull && <span className="whitespace-nowrap overflow-hidden">goals</span>}
+              {showFull && (
+                <div className="flex items-center justify-between w-full overflow-hidden">
+                  <span className="whitespace-nowrap">goals</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded ml-2">Soon</span>
+                </div>
+              )}
+            </div>
+          </li>
+          <li>
+            <NavLink to="/projects" className={navItemClass} onClick={onNavigate}>
+              <FolderKanban className="w-5 h-5 flex-shrink-0" />
+              {showFull && <span className="whitespace-nowrap overflow-hidden">projects</span>}
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/delegated" className={navItemClass} onClick={onNavigate}>
+              <Share2 className="w-5 h-5 flex-shrink-0" />
+              {showFull && <span className="whitespace-nowrap overflow-hidden">u innych</span>}
             </NavLink>
           </li>
           <li>
@@ -110,7 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 flex-shrink-0">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
               </svg>
-              {showFull && <span className="whitespace-nowrap overflow-hidden">kosz</span>}
+              {showFull && <span className="whitespace-nowrap overflow-hidden">trash</span>}
             </NavLink>
           </li>
           <li>
@@ -119,7 +139,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.99l1.005.828c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
               </svg>
-              {showFull && <span className="whitespace-nowrap overflow-hidden">ustawienia</span>}
+              {showFull && <span className="whitespace-nowrap overflow-hidden">settings</span>}
             </NavLink>
           </li>
         </ul>

@@ -21,12 +21,12 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
 
   return (
     <div className="w-full px-3 py-2 md:hidden">
-      <div className="bg-white dark:bg-[#202124] rounded-full border border-slate-200 dark:border-slate-700/80 shadow-md flex items-center px-3 py-1.5 space-x-2">
+      <div className="bg-[#EFEFEF] dark:bg-[#202124] rounded-full border border-[#AAAE7F]/40 shadow-md flex items-center px-3 py-1.5 space-x-2">
         {/* Menu Button */}
         <button
           type="button"
           onClick={onOpenMenu}
-          className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+          className="p-1.5 text-[#143109] dark:text-slate-300 hover:bg-[#D0D6B3]/40 rounded-full transition-colors"
           aria-label="Otwórz menu"
         >
           <Menu className="w-5 h-5" />
@@ -34,13 +34,13 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
 
         {/* Search Input */}
         <div className="flex-1 flex items-center space-x-2">
-          <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />
+          <Search className="w-4 h-4 text-[#143109]/60 dark:text-slate-500 flex-shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Wyszukaj notatki"
-            className="w-full bg-transparent border-none text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm focus:outline-none focus:ring-0"
+            className="w-full bg-transparent border-none text-[#143109] dark:text-slate-100 placeholder-[#143109]/60 dark:placeholder-slate-500 text-sm focus:outline-none focus:ring-0"
           />
         </div>
 
@@ -48,7 +48,7 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
         <button
           type="button"
           onClick={onToggleView}
-          className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+          className="p-1.5 text-[#143109] dark:text-slate-300 hover:bg-[#D0D6B3]/40 rounded-full transition-colors"
           title={isGridView ? "Widok jednokolumnowy" : "Widok dwukolumnowy"}
         >
           {isGridView ? (
@@ -60,7 +60,7 @@ export const MobileTopBar: React.FC<MobileTopBarProps> = ({
 
         {/* Avatar */}
         <div className="flex-shrink-0">
-          <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold text-xs border border-amber-300 dark:border-amber-700">
+          <div className="w-8 h-8 rounded-full bg-[#D0D6B3] text-[#143109] flex items-center justify-center font-bold text-xs border border-[#AAAE7F]">
             {user?.email ? user.email.charAt(0).toUpperCase() : <User className="w-4 h-4" />}
           </div>
         </div>

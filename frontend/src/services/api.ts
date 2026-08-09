@@ -9,27 +9,87 @@ export interface NoteEvent {
   description?: string;
 }
 
+export interface Delegation {
+  id: string;
+  note_id: string;
+  delegated_to_name: string;
+  delegated_to_email?: string;
+  delegation_status: 'sent' | 'viewed' | 'done' | string;
+  share_token: string;
+  ai_summary_for_delegate?: string;
+  created_at: string;
+}
+
 export interface Note {
   id: string;
   title?: string;
   content: string;
   note_type: 'strategic' | 'daily_morning' | 'daily_evening' | string;
+  project_id?: string;
+  project_ids?: string[];
+  assigned_to?: string;
+  assigned_user_ids?: string[];
+  pending_user_ids?: string[];
+  suggested_assignees?: string[];
   is_pinned?: boolean;
   user_id: string;
   created_at: string;
   media_url?: string;
   media_type?: string;
+  raw_transcript?: string;
+  processing_status?: 'completed' | 'pending' | 'error_transcription' | 'error_ai' | string;
   order?: number;
   is_deleted?: boolean;
   deleted_at?: string;
   events?: NoteEvent[];
+  delegated_to_name?: string;
+  delegated_to_email?: string;
+  delegation_status?: 'sent' | 'viewed' | 'done' | string;
+  share_token?: string;
+  ai_summary_for_delegate?: string;
+  delegations?: Delegation[];
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  status: 'active' | 'archived' | 'completed';
+  user_id: string;
+  created_at: string;
+  notes_count?: number;
+  notes?: Note[];
+}
+
+export interface ProjectCreateData {
+  name: string;
+  description?: string;
+  color?: string;
+  status?: 'active' | 'archived' | 'completed';
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  description?: string;
+  owner_id: string;
+  member_ids: string[];
+  created_at: string;
+}
+
+export interface TeamCreateData {
+  name: string;
+  description?: string;
+  member_emails?: string[];
 }
 
 export interface UserSettings {
   trash_retention_days: number;
+  timezone?: string;
 }
 
-async function getAuthHeaders(isMultipart = false): Promise<HeadersInit> {
+export async function getAuthHeaders(isMultipart = false): Promise<HeadersInit> {
   const user = auth.currentUser;
   const headers: Record<string, string> = {};
   
@@ -45,9 +105,12 @@ async function getAuthHeaders(isMultipart = false): Promise<HeadersInit> {
   return headers;
 }
 
-export async function fetchNotes(): Promise<Note[]> {
+export async function fetchNotes(projectId?: string): Promise<Note[]> {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${API_URL}/api/v1/notes`, {
+  const url = projectId 
+    ? `${API_URL}/api/v1/notes?project_id=${projectId}`
+    : `${API_URL}/api/v1/notes`;
+  const response = await fetch(url, {
     method: "GET",
     headers,
   });
@@ -59,7 +122,7 @@ export async function fetchNotes(): Promise<Note[]> {
   return response.json();
 }
 
-export async function createNote(noteData: { title?: string; content: string; note_type: string; is_pinned?: boolean }): Promise<Note> {
+export async function createNote(noteData: { title?: string; content: string; note_type: string; is_pinned?: boolean; project_id?: string; project_ids?: string[] }): Promise<Note> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/api/v1/notes`, {
     method: "POST",
@@ -74,7 +137,7 @@ export async function createNote(noteData: { title?: string; content: string; no
   return response.json();
 }
 
-export async function updateNote(noteId: string, noteData: { title?: string; content?: string; note_type?: string; is_pinned?: boolean }): Promise<Note> {
+export async function updateNote(noteId: string, noteData: { title?: string; content?: string; note_type?: string; is_pinned?: boolean; project_id?: string | null; project_ids?: string[]; assigned_user_ids?: string[] }): Promise<Note> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/api/v1/notes/${noteId}`, {
     method: "PUT",
@@ -127,7 +190,10 @@ export async function generateEveningReflection(reflectionData: {
 export async function uploadAudio(file: Blob | File): Promise<Note> {
   const headers = await getAuthHeaders(true);
   const formData = new FormData();
-  const ext = (file.type.includes('mp4') || file.type.includes('m4a')) ? 'm4a' : 'webm';
+  let ext = 'wav';
+  if (file.type.includes('mp4') || file.type.includes('m4a')) ext = 'm4a';
+  else if (file.type.includes('webm')) ext = 'webm';
+  else if (file.type.includes('wav')) ext = 'wav';
   const fileName = (file as File).name || `recording.${ext}`;
   formData.append("file", file, fileName);
 
@@ -228,7 +294,7 @@ export async function fetchUserSettings(): Promise<UserSettings> {
   return response.json();
 }
 
-export async function updateUserSettings(settings: UserSettings): Promise<UserSettings> {
+export async function updateUserSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_URL}/api/v1/users/settings`, {
     method: "PUT",
@@ -277,4 +343,234 @@ export async function chatAboutNote(noteId: string, messages: ChatMessage[]): Pr
   }
 
   return response.json();
+}
+
+export async function sendNoteEmail(noteId: string, email: string): Promise<{ success: boolean; sent_via_smtp: boolean; message: string }> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/notes/${noteId}/send-email`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ email }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail?.message || `Błąd wysyłania e-maila: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchProjects(): Promise<Project[]> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/projects`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd pobierania projektów: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createProject(projectData: ProjectCreateData): Promise<Project> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/projects`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(projectData),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd tworzenia projektu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchProjectDetails(projectId: string): Promise<Project> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/projects/${projectId}`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd pobierania szczegółów projektu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/projects/${projectId}`, {
+    method: "DELETE",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd usuwania projektu: ${response.status}`);
+  }
+}
+
+export async function reanalyzeNote(noteId: string): Promise<Note> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/notes/${noteId}/reanalyze`, {
+    method: "POST",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd ponownego uruchamiania analizy AI: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchTeams(): Promise<Team[]> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/teams`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd pobierania zespołów: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createTeam(teamData: TeamCreateData): Promise<Team> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/teams`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(teamData),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd tworzenia zespołu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteTeam(teamId: string): Promise<void> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/teams/${teamId}`, {
+    method: "DELETE",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd usuwania zespołu: ${response.status}`);
+  }
+}
+
+export async function addTeamMember(teamId: string, emailOrUid: string): Promise<Team> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/teams/${teamId}/members`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ email_or_uid: emailOrUid }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd dodawania członka do zespołu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function removeTeamMember(teamId: string, memberId: string): Promise<Team> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/teams/${teamId}/members/${encodeURIComponent(memberId)}`, {
+    method: "DELETE",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd usuwania członka zespołu: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function acceptNoteInvite(noteId: string): Promise<Note> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/notes/${noteId}/accept_invite`, {
+    method: "POST",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd podczas akceptacji zaproszenia: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function rejectNoteInvite(noteId: string): Promise<void> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/notes/${noteId}/reject_invite`, {
+    method: "POST",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd podczas odrzucania zaproszenia: ${response.status}`);
+  }
+}
+
+export async function handoffNote(noteId: string, delegateName: string, delegateEmail?: string): Promise<Note> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/notes/${noteId}/handoff`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      delegate_name: delegateName,
+      delegate_email: delegateEmail || null,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Błąd podczas delegacji: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface PublicNote {
+  id: string;
+  title?: string;
+  content?: string;
+  delegated_to_name?: string;
+  delegated_to_email?: string;
+  delegation_status: string;
+  ai_summary_for_delegate?: string;
+  created_at: string;
+}
+
+export async function fetchPublicNote(shareToken: string): Promise<PublicNote> {
+  const response = await fetch(`${API_URL}/api/v1/public/notes/${shareToken}`);
+  if (!response.ok) {
+    throw new Error(`Błąd podczas pobierania publicznej notatki: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function completePublicNote(shareToken: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/v1/public/notes/${shareToken}/complete`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd podczas oznaczania jako zrealizowane: ${response.status}`);
+  }
 }

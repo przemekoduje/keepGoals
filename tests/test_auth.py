@@ -7,9 +7,14 @@ with patch("firebase_admin.initialize_app"), patch("firebase_admin.firestore.cli
     from src.main import app
     from src.database import get_db
     from unittest.mock import MagicMock
-    app.dependency_overrides[get_db] = lambda: MagicMock()
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+    yield
+    app.dependency_overrides.clear()
 
 def test_access_notes_without_token():
     response = client.get("/api/v1/notes")

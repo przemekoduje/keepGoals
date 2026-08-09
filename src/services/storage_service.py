@@ -86,37 +86,59 @@ def process_media_and_cloud_sync_bg(
     file_bytes: bytes,
     content_type: str,
     is_video: bool,
-    db
+    db,
+    user_timezone: str = "Europe/Warsaw"
 ):
     """
     Pełne przetwarzanie w tle (BackgroundTasks):
-    1. Przeprowadza transkrypcję i analizę AI (ffmpeg + OpenAI Whisper + GPT-4o-mini).
+    1. Przeprowadza transkrypcję i analizę AI z uwzględnieniem strefy czasowej użytkownika.
     2. Aktualizuje tytuł i treść notatki w chmurze Firestore.
     3. Wysyła plik multimedialny do Firebase Storage i aktualizuje `media_url`.
     """
     from src.services.ai_service import analyze_audio_note, analyze_video_note
+    from src.crud import get_user_teams
+
+    # 0. Przygotowanie kontekstu współpracowników
+    team_members = []
+    if db:
+        try:
+            teams = get_user_teams(db, uid)
+            members_set = set()
+            for t in teams:
+                owner = t.get("owner_id")
+                if owner:
+                    members_set.add(owner)
+                for member in t.get("member_ids", []):
+                    members_set.add(member)
+            # Upewniamy się, że nie zwracamy samego siebie, chociaż AI poradzi sobie z tym.
+            team_members = list(members_set)
+        except Exception as e:
+            print(f"[BG Process] Błąd pobierania członków zespołu: {e}")
 
     # 1. Analiza AI w tle
     try:
         if is_video:
-            ai_result = analyze_video_note(file_bytes, content_type)
+            ai_result = analyze_video_note(file_bytes, content_type, user_timezone=user_timezone, team_members=team_members)
         else:
-            ai_result = analyze_audio_note(file_bytes, content_type)
+            ai_result = analyze_audio_note(file_bytes, content_type, user_timezone=user_timezone, team_members=team_members)
             
-        title = ai_result.get("title")
-        content = ai_result.get("content")
+        title = ai_result.get("title") or "Notatka z nagrania"
+        content = ai_result.get("content") or "Brak przetworzonej treści."
         
-        if db and title and content:
+        if db:
             try:
                 doc_ref = db.collection("users").document(uid).collection("notes").document(note_id)
                 update_data = {
                     "title": title,
-                    "content": content
+                    "content": content,
+                    "processing_status": "completed"
                 }
                 if "events" in ai_result:
                     update_data["events"] = ai_result["events"]
                 if "raw_transcript" in ai_result:
                     update_data["raw_transcript"] = ai_result["raw_transcript"]
+                if "suggested_assignees" in ai_result and ai_result["suggested_assignees"]:
+                    update_data["suggested_assignees"] = ai_result["suggested_assignees"]
                 
                 doc_ref.update(update_data)
                 print(f"[BG Process] Notatka {note_id} pomyślnie zaktualizowana o treść AI: '{title}'")
@@ -124,6 +146,15 @@ def process_media_and_cloud_sync_bg(
                 print(f"[BG Process Error] Błąd aktualizacji Firestore dla notatki {note_id}: {e}")
     except Exception as e:
         print(f"[BG Process Error] Wyjątek podczas analizy AI mediów: {e}")
+        if db:
+            try:
+                doc_ref = db.collection("users").document(uid).collection("notes").document(note_id)
+                doc_ref.update({
+                    "processing_status": "error_ai",
+                    "content": f"Błąd syntezy AI ({str(e)}). Surowe nagranie zostało zapisane. Kliknij 'Ponów analizę', aby spróbować ponownie."
+                })
+            except Exception as update_err:
+                print(f"[BG Process Error] Błąd zapisu statusu awarii dla notatki {note_id}: {update_err}")
 
     # 2. Synchronizacja pliku z Firebase Storage
     sync_media_to_cloud_bg(note_id, uid, filepath, filename, content_type, db)

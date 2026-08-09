@@ -15,58 +15,45 @@ export const MobileBottomBar: React.FC<MobileBottomBarProps> = ({
   onNewImage,
 }) => {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-[#202124] border-t border-slate-200/80 dark:border-slate-800 h-14 flex items-center justify-between px-5 md:hidden shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#EFEFEF] dark:bg-[#202124] border-t border-[#AAAE7F]/40 h-14 flex items-center justify-between px-5 md:hidden shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
       {/* Quick Tool Icons */}
-      <div className="flex items-center space-x-5 text-slate-600 dark:text-slate-300">
+      <div className="flex items-center space-x-5 text-[#143109] dark:text-slate-300">
+        <button
+          type="button"
+          onClick={onNewNote}
+          className="p-1.5 hover:bg-[#D0D6B3]/40 rounded-full transition-colors"
+          title="Nowa notatka tekstowa"
+        >
+          <Edit3 className="w-5 h-5" />
+        </button>
         <button
           type="button"
           onClick={onNewList || onNewNote}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+          className="p-1.5 hover:bg-[#D0D6B3]/40 rounded-full transition-colors"
           title="Nowa lista zadań"
         >
           <CheckSquare className="w-5 h-5" />
         </button>
         <button
           type="button"
-          onClick={onNewNote}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
-          title="Rysowanie"
-        >
-          <Edit3 className="w-5 h-5" />
-        </button>
-        <button
-          type="button"
-          onClick={onNewAudio || onNewNote}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
-          title="Nagranie głosowe"
-        >
-          <Mic className="w-5 h-5" />
-        </button>
-        <button
-          type="button"
           onClick={onNewImage || onNewNote}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+          className="p-1.5 hover:bg-[#D0D6B3]/40 rounded-full transition-colors"
           title="Dodaj zdjęcie"
         >
           <ImageIcon className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Google-Style Floating Action Button (FAB) */}
+      {/* Primary Floating Action Button (FAB) - Microphone Voice/Video Note */}
       <div className="relative">
         <button
           type="button"
-          onClick={onNewNote}
-          className="absolute right-0 bottom-[-6px] w-14 h-14 bg-white dark:bg-[#202124] rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
-          aria-label="Utwórz nową notatkę"
+          onClick={onNewAudio || onNewNote}
+          className="absolute right-0 bottom-[-6px] w-14 h-14 bg-[#143109] text-[#F7F7F7] rounded-full shadow-xl border-2 border-[#F7F7F7] dark:border-slate-800 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+          aria-label="Nagranie głosowe lub wideo"
+          title="Nagranie głosowe lub wideo"
         >
-          {/* Google Plus Icon with Brand Colors */}
-          <svg className="w-7 h-7" viewBox="0 0 36 36">
-            <path fill="#4285F4" d="M16 16v14h4V20h14v-4H20V2h-4v14H2z" />
-            <path fill="#EA4335" d="M16 16H2v4h14v14h4V20h14v-4H20V2h-4v14z" />
-            <path fill="#FBBC05" d="M16 16v14h4V20h14v-4H20V2h-4v14H2z" clipPath="url(#cp1)" />
-            <path fill="#34A853" d="M16 16H2v4h14v14h4V20h14v-4H20V2h-4v14z" clipPath="url(#cp2)" />
-          </svg>
+          <Mic className="w-6 h-6 text-[#F7F7F7]" />
         </button>
       </div>
     </div>

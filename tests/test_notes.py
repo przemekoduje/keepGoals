@@ -291,3 +291,192 @@ def test_upload_video_note_success(mock_save_media, mock_bg_proc, mock_verify_to
     assert json_data["media_type"] == "video/webm"
     mock_save_media.assert_called_once()
     mock_bg_proc.assert_called_once()
+
+# ----------------- TEST POST /api/v1/notes/{note_id}/send-email -----------------
+
+@patch("src.routers.notes.send_transcription_email")
+def test_send_note_email_success(mock_send_email, mock_verify_token, mock_firestore):
+    mock_send_email.return_value = True
+    
+    doc_data = {
+        "title": "Audio Note",
+        "content": "Processed content",
+        "raw_transcript": "Raw speech text",
+        "note_type": "daily_morning",
+        "created_at": datetime.now(timezone.utc),
+        "user_id": "test_uid_123"
+    }
+    mock_doc = create_mock_doc("note_email_123", doc_data, exists=True)
+    
+    mock_firestore.collection.return_value \
+                  .document.return_value \
+                  .collection.return_value \
+                  .document.return_value \
+                  .get.return_value = mock_doc
+
+    headers = {"Authorization": "Bearer valid_token"}
+    payload = {"email": "recipient@example.com"}
+    response = client.post("/api/v1/notes/note_email_123/send-email", json=payload, headers=headers)
+
+    assert response.status_code == 200
+    json_data = response.json()
+    assert json_data["success"] is True
+    assert json_data["sent_via_smtp"] is True
+    mock_send_email.assert_called_once_with(
+        recipient_email="recipient@example.com",
+        note_title="Audio Note",
+        note_content="Processed content",
+        raw_transcript="Raw speech text"
+    )
+
+# ----------------- TEST POST /api/v1/notes/{note_id}/reanalyze -----------------
+
+def test_reanalyze_note_success(mock_verify_token, mock_firestore):
+    doc_data = {
+        "title": "Failed Note",
+        "content": "Error during processing",
+        "raw_transcript": "Sample transcript text for reanalysis",
+        "note_type": "daily_morning",
+        "processing_status": "error_ai",
+        "created_at": datetime.now(timezone.utc),
+        "user_id": "test_uid_123"
+    }
+    mock_doc = create_mock_doc("note_reanalyze_123", doc_data, exists=True)
+    
+    mock_firestore.collection.return_value \
+                  .document.return_value \
+                  .collection.return_value \
+                  .document.return_value \
+                  .get.return_value = mock_doc
+
+    headers = {"Authorization": "Bearer valid_token"}
+    response = client.post("/api/v1/notes/note_reanalyze_123/reanalyze", headers=headers)
+
+    assert response.status_code == 200
+    json_data = response.json()
+    assert json_data["processing_status"] == "pending"
+
+def test_reanalyze_note_not_found(mock_verify_token, mock_firestore):
+    mock_doc = create_mock_doc("non_existent_note", {}, exists=False)
+    mock_firestore.collection.return_value \
+                  .document.return_value \
+                  .collection.return_value \
+                  .document.return_value \
+                  .get.return_value = mock_doc
+
+    headers = {"Authorization": "Bearer valid_token"}
+    response = client.post("/api/v1/notes/non_existent_note/reanalyze", headers=headers)
+
+    assert response.status_code == 404
+
+# ----------------- TESTY DELEGACJI (HANDOFF) -----------------
+
+@patch("src.routers.notes.generate_handoff_summary")
+def test_handoff_note_success(mock_gen_summary, mock_verify_token, mock_firestore):
+    mock_gen_summary.return_value = "Zadania AI: Opcja 1"
+    
+    doc_data = {
+        "title": "Notatka do przekazania",
+        "content": "Zrób zakupy i napisz raport.",
+        "note_type": "strategic",
+        "user_id": "test_uid_123"
+    }
+    
+    mock_doc = create_mock_doc("note_to_handoff", doc_data, exists=True)
+    
+    # Mocking get_note / update_note calls
+    mock_doc_ref = MagicMock()
+    mock_doc_ref.get.return_value = mock_doc
+    
+    mock_delegation_ref = MagicMock()
+    mock_doc_ref.collection.return_value.document.return_value = mock_delegation_ref
+    
+    mock_firestore.collection.return_value \
+                  .document.return_value \
+                  .collection.return_value \
+                  .document.return_value = mock_doc_ref
+                  
+    handoff_payload = {
+        "delegate_name": "Sergiusz",
+        "delegate_email": "sergiusz@example.com"
+    }
+    
+    # Mocking get_note_delegations helper call inside get_note
+    mock_del_doc = MagicMock()
+    mock_del_doc.to_dict.return_value = {
+        "delegated_to_name": "Sergiusz",
+        "delegated_to_email": "sergiusz@example.com",
+        "delegation_status": "sent",
+        "share_token": "token_123",
+        "ai_summary_for_delegate": "Zadania AI: Opcja 1"
+    }
+    mock_del_doc.id = "delegation_123"
+    mock_doc_ref.collection.return_value.stream.return_value = [mock_del_doc]
+    
+    headers = {"Authorization": "Bearer valid_token"}
+    response = client.post("/api/v1/notes/note_to_handoff/handoff", json=handoff_payload, headers=headers)
+    
+    assert response.status_code == 200
+    json_data = response.json()
+    assert len(json_data["delegations"]) == 1
+    assert json_data["delegations"][0]["delegated_to_name"] == "Sergiusz"
+    assert json_data["delegations"][0]["delegated_to_email"] == "sergiusz@example.com"
+    assert json_data["delegations"][0]["delegation_status"] == "sent"
+    assert json_data["delegations"][0]["ai_summary_for_delegate"] == "Zadania AI: Opcja 1"
+
+def test_public_get_note_success(mock_verify_token, mock_firestore):
+    doc_data = {
+        "delegated_to_name": "Wacław",
+        "delegation_status": "sent",
+        "share_token": "token_123",
+        "ai_summary_for_delegate": "Zadania dla Wacława"
+    }
+    mock_doc = MagicMock()
+    mock_doc.id = "public_delegation_id"
+    mock_doc.to_dict.return_value = doc_data
+    mock_doc_ref = MagicMock()
+    mock_doc.reference = mock_doc_ref
+    
+    # Parent note mock
+    mock_parent_note_doc = MagicMock()
+    mock_parent_note_doc.id = "note_123"
+    mock_parent_note_doc.exists = True
+    mock_parent_note_doc.to_dict.return_value = {"title": "Notatka publiczna"}
+    
+    mock_doc_ref.parent.parent.get.return_value = mock_parent_note_doc
+    mock_doc_ref.parent.parent.id = "note_123"
+    
+    mock_firestore.collection_group.return_value \
+                  .where.return_value \
+                  .stream.return_value = [mock_doc]
+                  
+    response = client.get("/api/v1/public/notes/token_123")
+    assert response.status_code == 200
+    json_data = response.json()
+    assert json_data["delegated_to_name"] == "Wacław"
+    assert json_data["title"] == "Notatka publiczna"
+    assert json_data["delegation_status"] == "viewed"
+    mock_doc_ref.update.assert_called_with({"delegation_status": "viewed"})
+
+def test_public_complete_note_success(mock_verify_token, mock_firestore):
+    doc_data = {
+        "share_token": "token_123",
+        "delegation_status": "viewed"
+    }
+    mock_doc = MagicMock()
+    mock_doc.id = "public_delegation_id"
+    mock_doc.to_dict.return_value = doc_data
+    mock_doc_ref = MagicMock()
+    mock_doc.reference = mock_doc_ref
+    
+    mock_firestore.collection_group.return_value \
+                  .where.return_value \
+                  .stream.return_value = [mock_doc]
+                  
+    response = client.post("/api/v1/public/notes/token_123/complete")
+    assert response.status_code == 200
+    json_data = response.json()
+    assert "zrealizowane" in json_data["message"]
+    mock_doc_ref.update.assert_called_with({"delegation_status": "done"})
+
+

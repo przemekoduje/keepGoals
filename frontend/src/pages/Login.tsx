@@ -89,7 +89,7 @@ export const Login: React.FC = () => {
     <div className="min-h-screen bg-pastel-bg-light dark:bg-slate-900 text-slate-800 dark:text-slate-100 flex items-center justify-center p-4 sm:p-6 font-sans">
       <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-[24px] shadow-sm p-6 sm:p-8 border border-slate-100 dark:border-slate-700 flex flex-col items-center text-center">
         
-        <div className="h-14 w-14 bg-pastel-blue-light text-pastel-blue-dark rounded-2xl flex items-center justify-center mb-4">
+        <div className="h-14 w-14 bg-[#143109]/10 text-[#143109] rounded-2xl flex items-center justify-center mb-4">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-7 h-7">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
           </svg>
@@ -140,7 +140,7 @@ export const Login: React.FC = () => {
                   placeholder="np. Jan Kowalski"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#143109] transition-all"
                 />
               </div>
             )}
@@ -152,7 +152,7 @@ export const Login: React.FC = () => {
                 placeholder="twoj@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#143109] transition-all"
                 required
               />
             </div>
@@ -164,7 +164,7 @@ export const Login: React.FC = () => {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#143109] transition-all"
                 required
               />
             </div>
@@ -177,7 +177,7 @@ export const Login: React.FC = () => {
                   placeholder="••••••••"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-pastel-blue-dark transition-all"
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#143109] transition-all"
                   required
                 />
               </div>
@@ -187,7 +187,7 @@ export const Login: React.FC = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full mt-5 bg-pastel-blue-dark hover:bg-blue-600 active:scale-[0.99] text-white py-3.5 px-6 rounded-xl font-semibold shadow-sm transition-all duration-200 flex items-center justify-center cursor-pointer"
+            className="w-full mt-5 bg-[#143109] hover:bg-blue-600 active:scale-[0.99] text-white py-3.5 px-6 rounded-xl font-semibold shadow-sm transition-all duration-200 flex items-center justify-center cursor-pointer"
           >
             {isLoading ? "Przetwarzanie..." : isRegistering ? "Zarejestruj się" : "Zaloguj się"}
           </button>

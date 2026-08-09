@@ -8,30 +8,25 @@ export default {
   theme: {
     extend: {
       colors: {
+        palette: {
+          blackForest: '#143109',
+          drySage: '#AAAE7F',
+          beige: '#D0D6B3',
+          brightSnow: '#F7F7F7',
+          platinum: '#EFEFEF',
+        },
         pastel: {
           bg: {
-            light: "#f8fafc",
-            dark: "#0f172a",
-          },
-          blue: {
-            light: "#e0f2fe",
-            dark: "#0369a1",
+            light: "#F7F7F7",
+            dark: "#143109",
           },
           green: {
-            light: "#dcfce7",
-            dark: "#15803d",
+            light: "#D0D6B3",
+            dark: "#143109",
           },
-          yellow: {
-            light: "#fef9c3",
-            dark: "#a16207",
-          },
-          purple: {
-            light: "#f3e8ff",
-            dark: "#7e22ce",
-          },
-          rose: {
-            light: "#ffe4e6",
-            dark: "#be123c",
+          sage: {
+            light: "#AAAE7F",
+            dark: "#143109",
           }
         }
       },

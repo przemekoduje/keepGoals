@@ -130,18 +130,18 @@ export const NoteAIChatModal: React.FC<NoteAIChatModalProps> = ({ note, onClose,
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 dark:text-slate-400 p-4 space-y-4">
-              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-2">
-                <Bot className="w-8 h-8 text-blue-500 dark:text-blue-400" />
+              <div className="w-16 h-16 bg-[#D0D6B3] dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
+                <Bot className="w-8 h-8 text-[#143109] dark:text-[#AAAE7F]" />
               </div>
-              <p className="text-sm">
+              <p className="text-sm font-medium text-[#143109]">
                 Jestem asystentem redakcyjnym dla tej notatki. <br/>
                 Powiedz mi, co chcesz w niej zmienić.
               </p>
               <div className="flex flex-wrap justify-center gap-2 mt-4">
-                <button onClick={() => setInputValue("Przepisz tę notatkę bardziej zwięźle.")} className="px-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                <button onClick={() => setInputValue("Przepisz tę notatkę bardziej zwięźle.")} className="px-3 py-1.5 text-xs bg-[#EFEFEF] dark:bg-slate-800 border border-[#AAAE7F]/40 rounded-full hover:bg-[#D0D6B3]/40 text-[#143109] transition-colors">
                   Zrób to zwięźlej
                 </button>
-                <button onClick={() => setInputValue("Sformatuj to jako listę TODO z checkboxami.")} className="px-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                <button onClick={() => setInputValue("Sformatuj to jako listę TODO z checkboxami.")} className="px-3 py-1.5 text-xs bg-[#EFEFEF] dark:bg-slate-800 border border-[#AAAE7F]/40 rounded-full hover:bg-[#D0D6B3]/40 text-[#143109] transition-colors">
                   Zrób listę zadań
                 </button>
               </div>
@@ -153,15 +153,15 @@ export const NoteAIChatModal: React.FC<NoteAIChatModalProps> = ({ note, onClose,
               <div className={`flex max-w-[90%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mx-2 mt-1 ${
                   msg.role === 'user' 
-                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300' 
-                    : 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
+                    ? 'bg-[#D0D6B3] text-[#143109]' 
+                    : 'bg-[#143109] text-[#F7F7F7]'
                 }`}>
                   {msg.role === 'user' ? <User className="w-5 h-5" /> : <Sparkles className="w-4 h-4" />}
                 </div>
                 <div className={`px-4 py-3 rounded-2xl text-sm break-words ${
                   msg.role === 'user'
-                    ? 'bg-blue-500 text-white rounded-tr-sm'
-                    : 'bg-white dark:bg-[#202124] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 rounded-tl-sm shadow-sm'
+                    ? 'bg-[#143109] text-[#F7F7F7] rounded-tr-sm font-medium'
+                    : 'bg-[#EFEFEF] dark:bg-[#202124] text-[#143109] dark:text-slate-200 border border-[#AAAE7F]/40 rounded-tl-sm shadow-sm'
                 }`}>
                   {renderMessageContent(msg.content, msg.role)}
                 </div>
@@ -172,13 +172,13 @@ export const NoteAIChatModal: React.FC<NoteAIChatModalProps> = ({ note, onClose,
           {isLoading && (
             <div className="flex justify-start w-full">
               <div className="flex max-w-[90%] flex-row">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-2 mt-1">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#D0D6B3] text-[#143109] flex items-center justify-center mx-2 mt-1">
                   <Sparkles className="w-4 h-4 animate-pulse" />
                 </div>
-                <div className="px-4 py-4 bg-white dark:bg-[#202124] border border-slate-200 dark:border-slate-800 rounded-2xl rounded-tl-sm shadow-sm flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-slate-300 dark:bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                  <div className="w-2 h-2 bg-slate-300 dark:bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                  <div className="w-2 h-2 bg-slate-300 dark:bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                <div className="px-4 py-4 bg-[#EFEFEF] dark:bg-[#202124] border border-[#AAAE7F]/40 rounded-2xl rounded-tl-sm shadow-sm flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-[#143109] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-2 h-2 bg-[#143109] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-2 h-2 bg-[#143109] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                 </div>
               </div>
             </div>
@@ -194,7 +194,7 @@ export const NoteAIChatModal: React.FC<NoteAIChatModalProps> = ({ note, onClose,
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800">
+        <div className="p-4 bg-[#EFEFEF] dark:bg-slate-900/50 border-t border-[#AAAE7F]/30">
           <form onSubmit={handleSendMessage} className="relative flex items-center">
             <input
               ref={inputRef}
@@ -203,12 +203,12 @@ export const NoteAIChatModal: React.FC<NoteAIChatModalProps> = ({ note, onClose,
               onChange={(e) => setInputValue(e.target.value)}
               disabled={isLoading}
               placeholder="Jak mam pomóc z tą notatką?"
-              className="w-full pl-4 pr-12 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-slate-800 dark:text-slate-100 text-sm transition-all outline-none shadow-sm"
+              className="w-full pl-4 pr-12 py-3 bg-[#F7F7F7] dark:bg-slate-800 border border-[#AAAE7F]/40 rounded-full focus:ring-2 focus:ring-[#143109]/40 focus:border-[#143109] text-[#143109] dark:text-slate-100 text-sm transition-all outline-none shadow-sm"
             />
             <button
               type="submit"
               disabled={!inputValue.trim() || isLoading}
-              className="absolute right-2 p-2 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-full transition-colors disabled:cursor-not-allowed shadow-sm"
+              className="absolute right-2 p-2 bg-[#143109] hover:bg-[#143109]/90 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-[#F7F7F7] rounded-full transition-colors disabled:cursor-not-allowed shadow-sm"
             >
               <Send className="w-4 h-4 ml-0.5" />
             </button>

@@ -3,6 +3,7 @@ import { createNote, uploadAudio, uploadVideo } from "../services/api";
 
 interface KeepInputBarProps {
   onSuccess: () => void;
+  projectId?: string;
 }
 
 type InputMode = "text" | "list" | "drawing" | "image";
@@ -15,7 +16,7 @@ interface ListItem {
   completed: boolean;
 }
 
-export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
+export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [inputMode, setInputMode] = useState<InputMode>("text");
   const [title, setTitle] = useState("");
@@ -37,6 +38,11 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
   const [recordStatus, setRecordStatus] = useState<RecordStatus>("inactive");
   const [recordingTime, setRecordingTime] = useState(0);
   const [isVideoExpanded, setIsVideoExpanded] = useState(false);
+  
+  // Failed recording recovery state
+  const [failedBlob, setFailedBlob] = useState<Blob | null>(null);
+  const [failedBlobType, setFailedBlobType] = useState<RecordMode | null>(null);
+  const [isRetryingUpload, setIsRetryingUpload] = useState(false);
 
   // Canvas drawing state
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -69,7 +75,8 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
       if (
         containerRef.current &&
         !containerRef.current.contains(event.target as Node) &&
-        recordStatus === "inactive"
+        recordStatus === "inactive" &&
+        !failedBlob // Don't close/save while recovery banner is open
       ) {
         // Check if there is anything to save
         const hasContent =
@@ -90,7 +97,7 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [title, content, listItems, selectedImage, inputMode, recordStatus]);
+  }, [title, content, listItems, selectedImage, inputMode, recordStatus, failedBlob]);
 
   const resetAll = () => {
     setIsExpanded(false);
@@ -105,6 +112,7 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
     setSelectedImage(null);
     setError(null);
     setIsVideoExpanded(false);
+    // Note: we don't clear failedBlob here so the user can download it even after closing the editor
   };
 
   const stopTracks = () => {
@@ -122,6 +130,40 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = (err) => reject(err);
     });
+  };
+
+  const handleRetryUpload = async () => {
+    if (!failedBlob || !failedBlobType) return;
+    setIsRetryingUpload(true);
+    setError(null);
+    try {
+      if (failedBlobType === "audio") {
+        await uploadAudio(failedBlob);
+      } else {
+        await uploadVideo(failedBlob);
+      }
+      setFailedBlob(null);
+      setFailedBlobType(null);
+      resetAll();
+      onSuccess();
+    } catch (uploadErr: any) {
+      setError(uploadErr.message || "Ponowna próba wysyłania nagrania nie powiodła się.");
+    } finally {
+      setIsRetryingUpload(false);
+    }
+  };
+
+  const handleDownloadFailedBlob = () => {
+    if (!failedBlob) return;
+    const url = URL.createObjectURL(failedBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ext = failedBlobType === "video" ? "mp4" : "webm";
+    a.download = `keepGoals_kopia_nagrania_${Date.now()}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleSave = async () => {
@@ -156,7 +198,8 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
       await createNote({
         title: title.trim(),
         content: finalContent || "Pusta notatka",
-        note_type: "daily_morning", // default type for quick notes
+        note_type: "generic",
+        project_id: projectId,
       });
 
       resetAll();
@@ -328,12 +371,16 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
           } else {
             await uploadVideo(blob);
           }
+          setFailedBlob(null);
+          setFailedBlobType(null);
           setRecordStatus("inactive");
           setRecordingTime(0);
           chunksRef.current = [];
           resetAll();
           onSuccess();
         } catch (uploadErr: any) {
+          setFailedBlob(blob);
+          setFailedBlobType(mode);
           setError(uploadErr.message || "Błąd wysyłania nagrania.");
           setRecordStatus("inactive");
         }
@@ -383,7 +430,7 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
     <div
       id="keep-input-bar"
       ref={containerRef}
-      className="w-full max-w-2xl mx-auto bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-lg transition-all duration-300 overflow-hidden mb-8"
+      className="w-full max-w-2xl mx-auto bg-[#EFEFEF] dark:bg-[#202124] rounded-2xl border border-[#AAAE7F]/40 shadow-lg transition-all duration-300 overflow-hidden mb-8"
     >
       <input
         type="file"
@@ -399,7 +446,7 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
           onClick={() => setIsExpanded(true)}
           className="p-4 flex items-center justify-between cursor-text"
         >
-          <span className="text-slate-400 dark:text-slate-500 font-medium">Utwórz notatkę...</span>
+          <span className="text-[#143109]/60 dark:text-slate-400 font-medium">Utwórz notatkę...</span>
           <div className="flex items-center space-x-1 sm:space-x-2">
             {/* New Checklist mode trigger */}
             <button
@@ -481,8 +528,47 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess }) => {
       {isExpanded && (
         <div className="flex flex-col">
           {error && (
-            <div className="bg-rose-50 dark:bg-rose-950/30 border-b border-rose-100 dark:border-rose-900/50 px-4 py-2.5 text-xs font-semibold text-rose-600 dark:text-rose-400">
-              {error}
+            <div className="bg-rose-50 dark:bg-rose-950/30 border-b border-rose-100 dark:border-rose-900/50 px-4 py-3 text-xs font-semibold text-rose-600 dark:text-rose-400">
+              <div className="flex flex-col space-y-2">
+                <span>⚠️ {error}</span>
+                {failedBlob && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleRetryUpload}
+                      disabled={isRetryingUpload}
+                      className="bg-[#143109] hover:bg-[#143109]/90 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm flex items-center space-x-1 cursor-pointer"
+                    >
+                      {isRetryingUpload ? (
+                        <>
+                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-1" />
+                          <span>Wysyłanie...</span>
+                        </>
+                      ) : (
+                        <span>Wyślij ponownie</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadFailedBlob}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm cursor-pointer"
+                    >
+                      Pobierz lokalnie
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFailedBlob(null);
+                        setFailedBlobType(null);
+                        setError(null);
+                      }}
+                      className="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer"
+                    >
+                      Odrzuć
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { uploadAudio, uploadVideo } from '../services/api';
+import { Loader2 } from 'lucide-react';
 
 type MediaType = 'audio' | 'video';
 type RecordState = 'inactive' | 'recording' | 'paused' | 'uploading';
@@ -10,25 +11,65 @@ interface MediaRecorderBaseProps {
   onCloseExternal?: () => void;
 }
 
+// ─── Stała konfiguracja ────────────────────────────────────────────────────
+const RING_BUFFER_MS = 2000;   // 2 s pre-recording
+const TIMESLICE_MS   = 100;    // granulacja chunk-ów MediaRecorder
+const MAX_RING_CHUNKS = Math.ceil(RING_BUFFER_MS / TIMESLICE_MS); // = 20
+
+/** Wybiera najlepszy obsługiwany MIME type audio dla MediaRecorder */
+function bestAudioMime(): string {
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+  ];
+  for (const t of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
+
 export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
   onUploadSuccess,
   isOpenExternal,
   onCloseExternal,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [mode, setMode] = useState<MediaType>('audio');
-  const [recordState, setRecordState] = useState<RecordState>('inactive');
+  // ─── UI State ─────────────────────────────────────────────────────────────
+  const [isOpen, setIsOpen]               = useState(false);
+  const [mode, setMode]                   = useState<MediaType>('audio');
+  const [recordState, setRecordState]     = useState<RecordState>('inactive');
   const [recordingTime, setRecordingTime] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]                 = useState<string | null>(null);
   const [isVideoExpanded, setIsVideoExpanded] = useState(false);
+  const [isWarmingUp, setIsWarmingUp]     = useState(false);
+  const [audioLevel, setAudioLevel]       = useState(0);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const timerRef = useRef<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // ─── Video refs ───────────────────────────────────────────────────────────
+  const videoRecorderRef  = useRef<MediaRecorder | null>(null);
+  const videoChunksRef    = useRef<Blob[]>([]);
+  const videoStreamRef    = useRef<MediaStream | null>(null);
+  const videoRef          = useRef<HTMLVideoElement>(null);
 
+  // ─── Audio ring-buffer refs ───────────────────────────────────────────────
+  const audioRecorderRef      = useRef<MediaRecorder | null>(null);  // ciągły recorder
+  const audioStreamRef        = useRef<MediaStream | null>(null);
+  const ringBufferRef         = useRef<Blob[]>([]);  // rolling 2-s bufor
+  const mainChunksRef         = useRef<Blob[]>([]);  // chunks po kliknięciu "Nagraj"
+  const preSnapshotRef        = useRef<Blob[]>([]);  // snapshot bufora w chwili naciśnięcia
+  const isCapturingRef        = useRef<boolean>(false);
+
+  // ─── Audio level analysis refs ────────────────────────────────────────────
+  const audioCtxRef     = useRef<AudioContext | null>(null);
+  const analyserRef     = useRef<AnalyserNode | null>(null);
+  const animFrameRef    = useRef<number | null>(null);
+
+  // ─── Timer / warmup ───────────────────────────────────────────────────────
+  const timerRef        = useRef<number | null>(null);
+  const warmupTimeoutRef = useRef<number | null>(null);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+
+  // ─── Obsługa pliku z dysku ─────────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -36,108 +77,303 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
     await performUpload(file, targetMode);
   };
 
+  // ─── External open/close sync ─────────────────────────────────────────────
   useEffect(() => {
     if (isOpenExternal !== undefined) {
       setIsOpen(isOpenExternal);
-      if (isOpenExternal) {
-        setMode('audio');
-      }
+      if (isOpenExternal) setMode('audio');
     }
   }, [isOpenExternal]);
 
+  // ─── Inicjalizacja warmup przy otwarciu modalu w trybie audio ─────────────
+  useEffect(() => {
+    if (isOpen && mode === 'audio') {
+      initAudioWarmup();
+    } else {
+      cleanupAudioWarmup();
+    }
+  }, [isOpen, mode]);
+
+  // ─── Cleanup przy odmontowaniu komponentu ─────────────────────────────────
   useEffect(() => {
     return () => {
-      stopTracks();
+      cleanupAudioWarmup();
+      stopVideoTracks();
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
 
-  const stopTracks = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AUDIO WARMUP — MediaRecorder + AnalyserNode (bez ScriptProcessorNode)
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  const startRecording = async (targetMode: MediaType) => {
-    setError(null);
+  const initAudioWarmup = async () => {
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Brak dostępu do API mediów. Upewnij się, że używasz połączenia HTTPS lub localhost.");
-      }
+      cleanupAudioWarmup();
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: targetMode === 'video' ? { facingMode: 'environment' } : false,
-      });
-      streamRef.current = stream;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      audioStreamRef.current = stream;
 
-      if (targetMode === 'video' && videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
+      // Poziom głośności — AnalyserNode + rAF
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtxClass();
+      audioCtxRef.current = ctx;
+      if (ctx.state === 'suspended') await ctx.resume();
 
-      let mimeType = "";
-      if (targetMode === "video") {
-        if (MediaRecorder.isTypeSupported("video/webm")) mimeType = "video/webm";
-        else if (MediaRecorder.isTypeSupported("video/mp4")) mimeType = "video/mp4";
-      } else {
-        if (MediaRecorder.isTypeSupported("audio/webm")) mimeType = "audio/webm";
-        else if (MediaRecorder.isTypeSupported("audio/mp4")) mimeType = "audio/mp4";
-      }
-      const options = mimeType ? { mimeType } : undefined;
-      const mediaRecorder = new MediaRecorder(stream, options);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.75;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      analyserRef.current = analyser;
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunksRef.current.push(e.data);
+      const tick = () => {
+        if (!analyserRef.current) return;
+        const buf = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(buf);
+        const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
+        setAudioLevel(Math.min(100, Math.round(avg * 2)));
+        animFrameRef.current = requestAnimationFrame(tick);
+      };
+      animFrameRef.current = requestAnimationFrame(tick);
+
+      // Ciągły MediaRecorder → ring buffer
+      const mime = bestAudioMime();
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      audioRecorderRef.current = mr;
+
+      mr.ondataavailable = (e) => {
+        if (e.data.size === 0) return;
+        if (isCapturingRef.current) {
+          // Jesteśmy w trybie nagrywania → chunk do głównego bufora
+          mainChunksRef.current.push(e.data);
+        } else {
+          // Pre-recording → ring buffer (rolling window)
+          ringBufferRef.current.push(e.data);
+          while (ringBufferRef.current.length > MAX_RING_CHUNKS) {
+            ringBufferRef.current.shift();
+          }
         }
       };
 
-      mediaRecorder.onstop = async () => {
-        const blobType = mediaRecorderRef.current?.mimeType || (targetMode === "video" ? "video/webm" : "audio/webm");
-        const blob = new Blob(chunksRef.current, {
-          type: blobType,
-        });
-        await performUpload(blob, targetMode);
-      };
+      mr.start(TIMESLICE_MS);
+    } catch (err) {
+      console.error('initAudioWarmup failed:', err);
+    }
+  };
 
-      chunksRef.current = [];
-      mediaRecorder.start();
-      mediaRecorderRef.current = mediaRecorder;
+  const cleanupAudioWarmup = () => {
+    // Zatrzymaj warmupTimeout
+    if (warmupTimeoutRef.current) {
+      clearTimeout(warmupTimeoutRef.current);
+      warmupTimeoutRef.current = null;
+    }
 
+    // Zatrzymaj animację poziomu głośności
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    // Rozłącz analyser
+    if (analyserRef.current) {
+      try { analyserRef.current.disconnect(); } catch {}
+      analyserRef.current = null;
+    }
+
+    // Zamknij AudioContext
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch {}
+      audioCtxRef.current = null;
+    }
+
+    // Zatrzymaj MediaRecorder (cichy stop — bez await)
+    if (audioRecorderRef.current && audioRecorderRef.current.state !== 'inactive') {
+      try { audioRecorderRef.current.stop(); } catch {}
+    }
+    audioRecorderRef.current = null;
+
+    // Zatrzymaj strumień
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(t => t.stop());
+      audioStreamRef.current = null;
+    }
+
+    // Wyczyść bufory
+    isCapturingRef.current = false;
+    ringBufferRef.current = [];
+    mainChunksRef.current = [];
+    preSnapshotRef.current = [];
+    setAudioLevel(0);
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VIDEO helpers
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const stopVideoTracks = () => {
+    if (videoStreamRef.current) {
+      videoStreamRef.current.getTracks().forEach(t => t.stop());
+      videoStreamRef.current = null;
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // START RECORDING
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const startRecording = async (targetMode: MediaType) => {
+    setError(null);
+    setMode(targetMode);
+
+    if (targetMode === 'audio') {
+      // Warmup 300 ms — w tym czasie ring buffer ma czas zebrać próbki
+      setIsWarmingUp(true);
       setRecordState('recording');
       setRecordingTime(0);
-      timerRef.current = window.setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-      }, 1000);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.name === "NotSupportedError" ? "Format nagrywania nie jest wspierany na Twoim urządzeniu." : "Brak dostępu do mikrofonu/kamery.");
+
+      if (warmupTimeoutRef.current) clearTimeout(warmupTimeoutRef.current);
+      warmupTimeoutRef.current = window.setTimeout(() => {
+        setIsWarmingUp(false);
+
+        // Snapshot ring-buffera jako pre-recording
+        preSnapshotRef.current = [...ringBufferRef.current];
+        // Zeruj główny bufor i zacznij przechwytywanie
+        mainChunksRef.current = [];
+        isCapturingRef.current = true;
+
+        // Timer wyświetlający czas nagrania
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = window.setInterval(() => {
+          setRecordingTime(prev => prev + 1);
+        }, 1000);
+      }, 300);
+
+    } else {
+      // ── Nagrywanie wideo (bez zmian) ──
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Brak dostępu do API mediów. Upewnij się, że używasz HTTPS lub localhost.');
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: { facingMode: 'environment' },
+        });
+        videoStreamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+
+        let mime = '';
+        if (MediaRecorder.isTypeSupported('video/webm')) mime = 'video/webm';
+        else if (MediaRecorder.isTypeSupported('video/mp4')) mime = 'video/mp4';
+
+        const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+        videoRecorderRef.current = mr;
+
+        mr.ondataavailable = (e) => {
+          if (e.data.size > 0) videoChunksRef.current.push(e.data);
+        };
+        mr.onstop = async () => {
+          const blob = new Blob(videoChunksRef.current, { type: mr.mimeType || 'video/webm' });
+          await performUpload(blob, 'video');
+        };
+
+        videoChunksRef.current = [];
+        mr.start(1000);
+
+        setRecordState('recording');
+        setRecordingTime(0);
+        timerRef.current = window.setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+
+      } catch (err: any) {
+        setError(
+          err.name === 'NotSupportedError'
+            ? 'Format nagrywania nie jest wspierany na Twoim urządzeniu.'
+            : 'Brak dostępu do mikrofonu/kamery.'
+        );
+      }
     }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      if (timerRef.current) clearInterval(timerRef.current);
-      stopTracks();
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STOP RECORDING
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const stopRecording = async () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    if (mode === 'audio') {
+      setRecordState('uploading');
+
+      // Zapamiętaj MIME przed zatrzymaniem
+      const mimeType = audioRecorderRef.current?.mimeType || bestAudioMime() || 'audio/webm';
+
+      // Zatrzymaj MediaRecorder i poczekaj na ostatni ondataavailable
+      // (isCapturingRef nadal true → ostatni chunk trafi do mainChunksRef)
+      await new Promise<void>((resolve) => {
+        const mr = audioRecorderRef.current;
+        if (mr && mr.state !== 'inactive') {
+          mr.addEventListener('stop', () => resolve(), { once: true });
+          mr.stop();
+        } else {
+          resolve();
+        }
+      });
+
+      // Teraz wyłącz flagę przechwytywania
+      isCapturingRef.current = false;
+
+      // Złącz: [pre-recording 2s] + [główne nagranie]
+      const allBlobs = [...preSnapshotRef.current, ...mainChunksRef.current];
+
+      if (allBlobs.length === 0) {
+        setError('Nie udało się nagrać dźwięku. Sprawdź uprawnienia mikrofonu.');
+        setRecordState('inactive');
+        return;
+      }
+
+      const combinedBlob = new Blob(allBlobs, { type: mimeType });
+
+      // Cleanup zasobów PRZED uploadem (nie będą już potrzebne)
+      cleanupAudioWarmup();
+      await performUpload(combinedBlob, 'audio');
+
+    } else {
+      // Wideo
+      if (videoRecorderRef.current?.state === 'recording') {
+        videoRecorderRef.current.stop();
+        stopVideoTracks();
+      }
     }
   };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CANCEL RECORDING
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const cancelRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      if (timerRef.current) clearInterval(timerRef.current);
-      stopTracks();
+    if (timerRef.current) clearInterval(timerRef.current);
+    cleanupAudioWarmup();
+
+    if (videoRecorderRef.current?.state === 'recording') {
+      videoRecorderRef.current.stop();
+      stopVideoTracks();
     }
+
     setRecordState('inactive');
     setIsOpen(false);
-    chunksRef.current = [];
+    videoChunksRef.current = [];
     setRecordingTime(0);
     setIsVideoExpanded(false);
     if (onCloseExternal) onCloseExternal();
   };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UPLOAD
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const performUpload = async (blob: Blob, uploadMode: MediaType) => {
     setRecordState('uploading');
@@ -150,7 +386,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
       setRecordState('inactive');
       setIsOpen(false);
       setRecordingTime(0);
-      chunksRef.current = [];
+      videoChunksRef.current = [];
       setIsVideoExpanded(false);
       if (onCloseExternal) onCloseExternal();
       if (onUploadSuccess) onUploadSuccess();
@@ -162,10 +398,16 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
   };
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (isOpenExternal !== undefined && !isOpen) return null;
 
   return (
     <div className="fixed bottom-6 right-6 flex-col items-end z-50 flex md:hidden">
@@ -197,7 +439,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
                   muted
                   playsInline
                 />
-                <button 
+                <button
                   onClick={() => setIsVideoExpanded(!isVideoExpanded)}
                   className={`absolute ${isVideoExpanded ? 'top-6 right-6' : 'top-2 right-2'} z-20 bg-black/50 p-2 rounded-full text-white hover:bg-black/70 transition-colors`}
                 >
@@ -213,14 +455,35 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
                 </button>
               </>
             )}
-            
+
             {mode === 'audio' && recordState === 'recording' && (
-              <div className="flex items-center space-x-1">
-                <div className="w-1.5 h-6 bg-pastel-purple-dark rounded-full animate-[bounce_1s_infinite_100ms]"></div>
-                <div className="w-1.5 h-10 bg-pastel-purple-dark rounded-full animate-[bounce_1s_infinite_300ms]"></div>
-                <div className="w-1.5 h-8 bg-pastel-purple-dark rounded-full animate-[bounce_1s_infinite_200ms]"></div>
-                <div className="w-1.5 h-12 bg-pastel-purple-dark rounded-full animate-[bounce_1s_infinite_400ms]"></div>
-                <div className="w-1.5 h-6 bg-pastel-purple-dark rounded-full animate-[bounce_1s_infinite_100ms]"></div>
+              <div className="flex flex-col items-center justify-center space-y-3">
+                {isWarmingUp ? (
+                  <div className="flex flex-col items-center space-y-2">
+                    <Loader2 className="w-6 h-6 animate-spin text-[#143109]" />
+                    <span className="text-xs text-slate-500 font-bold animate-pulse">Rozgrzewanie mikrofonu...</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-end justify-center space-x-1 h-12 w-full px-4">
+                      {[...Array(9)].map((_, i) => {
+                        const factor = 1 - Math.abs(i - 4) * 0.15;
+                        const height = Math.max(6, Math.round((audioLevel / 100) * 40 * factor));
+                        return (
+                          <div
+                            key={i}
+                            style={{ height: `${height}px` }}
+                            className="w-1.5 bg-[#143109] rounded-full transition-all duration-75"
+                          />
+                        );
+                      })}
+                    </div>
+                    <span className="text-xs text-emerald-600 font-extrabold tracking-wider uppercase animate-pulse flex items-center space-x-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      <span>Mów teraz</span>
+                    </span>
+                  </>
+                )}
               </div>
             )}
 
@@ -232,8 +495,8 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
 
             {recordState === 'uploading' && (
               <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-10">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-pastel-purple-dark border-t-transparent"></div>
-                <span className="text-xs font-bold mt-2 text-pastel-purple-dark">Wysyłanie...</span>
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#143109] border-t-transparent"></div>
+                <span className="text-xs font-bold mt-2 text-[#143109]">Wysyłanie...</span>
               </div>
             )}
 
@@ -249,20 +512,20 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
               <div className="flex space-x-2">
                 <button
                   onClick={() => { setMode('audio'); startRecording('audio'); }}
-                  className="flex-1 py-3 bg-pastel-purple-light hover:bg-pastel-purple-light/80 text-pastel-purple-dark rounded-xl text-sm font-bold transition-colors"
+                  className="flex-1 py-3 bg-[#D0D6B3] hover:bg-[#D0D6B3]/80 text-[#143109] rounded-xl text-sm font-bold transition-colors"
                 >
                   Głos
                 </button>
                 <button
                   onClick={() => { setMode('video'); startRecording('video'); }}
-                  className="flex-1 py-3 bg-pastel-blue-light hover:bg-pastel-blue-light/80 text-pastel-blue-dark rounded-xl text-sm font-bold transition-colors"
+                  className="flex-1 py-3 bg-[#AAAE7F] hover:bg-[#AAAE7F]/80 text-[#143109] rounded-xl text-sm font-bold transition-colors"
                 >
                   Wideo
                 </button>
               </div>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center space-x-2"
+                className="w-full py-2.5 bg-[#EFEFEF] hover:bg-[#D0D6B3]/40 dark:bg-slate-700 dark:hover:bg-slate-600 text-[#143109] dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center space-x-2 border border-[#AAAE7F]/30"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 12 4.5M12 3v13.5" />
@@ -282,7 +545,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
           {recordState === 'recording' && (
             <button
               onClick={stopRecording}
-              className="w-full py-3 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-sm font-bold flex justify-center items-center space-x-2 shadow-sm"
+              className="w-full py-3 bg-[#143109] text-[#F7F7F7] rounded-xl text-sm font-bold flex justify-center items-center space-x-2 shadow-sm hover:bg-[#143109]/90"
             >
               <div className="w-3 h-3 bg-rose-500 rounded-sm"></div>
               <span>Zakończ i Wyślij</span>
@@ -291,11 +554,11 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
         </div>
       )}
 
-      {/* Przycisk aktywacji panelu */}
-      {!isOpen && (
+      {/* Przycisk aktywacji panelu (tylko gdy komponent nie jest sterowany z zewnątrz) */}
+      {!isOpen && isOpenExternal === undefined && (
         <button
-          onClick={() => setIsOpen(true)}
-          className="w-14 h-14 bg-pastel-purple-light text-pastel-purple-dark hover:scale-105 transition-transform duration-200 rounded-full shadow-lg flex items-center justify-center border-2 border-white dark:border-slate-800"
+          onClick={() => { setIsOpen(true); setMode('audio'); }}
+          className="w-14 h-14 bg-[#143109] text-[#F7F7F7] hover:scale-105 transition-transform duration-200 rounded-full shadow-lg flex items-center justify-center border-2 border-white dark:border-slate-800"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />

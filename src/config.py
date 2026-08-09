@@ -21,6 +21,12 @@ class Settings:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or ""
     GROQ_API_KEY = os.getenv("GROQ_API_KEY") or ""
     
+    SMTP_HOST = os.getenv("SMTP_HOST") or os.getenv("EMAIL_HOST") or "smtp.gmail.com"
+    SMTP_PORT = int(os.getenv("SMTP_PORT") or os.getenv("EMAIL_PORT") or "587")
+    SMTP_USER = (os.getenv("SMTP_USER") or os.getenv("EMAIL_USER") or os.getenv("EMAIL_USERNAME") or "").strip()
+    SMTP_PASSWORD = (os.getenv("SMTP_PASSWORD") or os.getenv("EMAIL_PASSWORD") or "").replace(" ", "").strip()
+    SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL") or os.getenv("EMAIL_FROM") or SMTP_USER
+    
     # Podstawowe dozwolone adresy (HTTP i HTTPS)
     _origins = [
         "http://localhost:3000",

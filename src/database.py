@@ -5,10 +5,17 @@ from firebase_admin import credentials, firestore
 from src.config import settings
 
 class MockDocumentSnapshot:
-    def __init__(self, doc_id, data):
+    def __init__(self, doc_id, data, collection_ref=None):
         self.id = doc_id
         self._data = data
         self.exists = data is not None
+        self._collection_ref = collection_ref
+
+    @property
+    def reference(self):
+        if self._collection_ref is None:
+            return None
+        return MockDocumentReference(self._collection_ref, self.id)
 
     def to_dict(self):
         return self._data.copy() if self._data else {}
@@ -49,7 +56,7 @@ class MockCollectionReference:
         return MockDocumentReference(self, doc_id)
 
     def stream(self):
-        return [MockDocumentSnapshot(doc_id, data) for doc_id, data in self.data.items()]
+        return [MockDocumentSnapshot(doc_id, data, collection_ref=self) for doc_id, data in self.data.items()]
 
 class MockFirestoreClient:
     def __init__(self):

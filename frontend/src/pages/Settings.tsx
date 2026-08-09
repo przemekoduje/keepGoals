@@ -3,6 +3,7 @@ import { fetchUserSettings, updateUserSettings } from '../services/api';
 
 export const Settings: React.FC = () => {
   const [retentionDays, setRetentionDays] = useState<number>(30);
+  const [timezone, setTimezone] = useState<string>("Europe/Warsaw");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -15,6 +16,9 @@ export const Settings: React.FC = () => {
     try {
       const settings = await fetchUserSettings();
       setRetentionDays(settings.trash_retention_days);
+      if (settings.timezone) {
+        setTimezone(settings.timezone);
+      }
     } catch (error) {
       console.error('Failed to load settings', error);
       setMessage('Błąd wczytywania ustawień.');
@@ -27,7 +31,7 @@ export const Settings: React.FC = () => {
     setSaving(true);
     setMessage('');
     try {
-      await updateUserSettings({ trash_retention_days: retentionDays });
+      await updateUserSettings({ trash_retention_days: retentionDays, timezone });
       setMessage('Ustawienia zapisane pomyślnie.');
     } catch (error) {
       console.error('Failed to save settings', error);
@@ -111,6 +115,30 @@ export const Settings: React.FC = () => {
                 </span>
               </label>
             </div>
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700">
+            <h2 className="text-xl font-semibold mb-3 text-slate-800 dark:text-slate-100">
+              Strefa czasowa (Timezone)
+            </h2>
+            <p className="text-slate-600 dark:text-slate-400 text-sm mb-4">
+              Wybierz strefę czasową do przeliczania terminów z transkrypcji AI oraz kalendarza.
+            </p>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="w-full max-w-md p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-medium focus:ring-2 focus:ring-[#143109] outline-none"
+            >
+              <option value="Europe/Warsaw">Europe/Warsaw (UTC+1/UTC+2)</option>
+              <option value="Europe/London">Europe/London (UTC+0/UTC+1)</option>
+              <option value="Europe/Berlin">Europe/Berlin (UTC+1/UTC+2)</option>
+              <option value="America/New_York">America/New_York (EST/EDT)</option>
+              <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+              <option value="America/Denver">America/Denver (MST/MDT)</option>
+              <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+              <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+              <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
+            </select>
           </div>
 
           <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
