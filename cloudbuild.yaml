@@ -1,11 +1,11 @@
 steps:
   # 1. Budowanie obrazu Docker
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'europe-central2-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA', '.']
+    args: ['build', '-t', 'europe-west1-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA', '.']
 
   # 2. Wypchnięcie obrazu do Google Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'europe-central2-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA']
+    args: ['push', 'europe-west1-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA']
 
   # 3. Wdrożenie zaktualizowanego obrazu do Google Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -15,9 +15,9 @@ steps:
       - 'deploy'
       - 'keepgoals-backend'
       - '--image'
-      - 'europe-central2-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA'
+      - 'europe-west1-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA'
       - '--region'
-      - 'europe-central2'
+      - 'europe-west1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
@@ -25,4 +25,4 @@ steps:
       - 'GEMINI_API_KEY=GEMINI_API_KEY:latest,FIREBASE_CREDENTIALS_PATH=FIREBASE_CREDENTIALS_PATH:latest'
 
 images:
-  - 'europe-central2-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA'
+  - 'europe-west1-docker.pkg.dev/$PROJECT_ID/keepgoals-repo/backend:$COMMIT_SHA'

@@ -188,6 +188,9 @@ export async function generateEveningReflection(reflectionData: {
 }
 
 export async function uploadAudio(file: Blob | File): Promise<Note> {
+  if (!file || file.size === 0) {
+    throw new Error("Plik nagrania audio jest pusty (0 B). Nagraj ponownie.");
+  }
   const headers = await getAuthHeaders(true);
   const formData = new FormData();
   let ext = 'wav';
@@ -197,34 +200,67 @@ export async function uploadAudio(file: Blob | File): Promise<Note> {
   const fileName = (file as File).name || `recording.${ext}`;
   formData.append("file", file, fileName);
 
-  const response = await fetch(`${API_URL}/api/v1/notes/audio`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/v1/notes/audio`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+  } catch (err: any) {
+    const msg = err?.message || "";
+    if (msg.includes("Load failed") || msg.includes("Failed to fetch")) {
+      throw new Error("Błąd sieci podczas wysyłania nagrania (Load failed). Sprawdź połączenie.");
+    }
+    throw err;
+  }
 
   if (!response.ok) {
-    throw new Error(`Błąd wysyłania notatki audio: ${response.status}`);
+    let detail = `Błąd wysyłania notatki audio: ${response.status}`;
+    try {
+      const errData = await response.json();
+      if (errData?.detail?.message) detail = errData.detail.message;
+      else if (errData?.message) detail = errData.message;
+    } catch {}
+    throw new Error(detail);
   }
 
   return response.json();
 }
 
 export async function uploadVideo(file: Blob | File): Promise<Note> {
+  if (!file || file.size === 0) {
+    throw new Error("Plik nagrania wideo jest pusty (0 B). Nagraj ponownie.");
+  }
   const headers = await getAuthHeaders(true);
   const formData = new FormData();
   const ext = file.type.includes('mp4') ? 'mp4' : file.type.includes('quicktime') ? 'mov' : 'webm';
   const fileName = (file as File).name || `video.${ext}`;
   formData.append("file", file, fileName);
 
-  const response = await fetch(`${API_URL}/api/v1/notes/video`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/v1/notes/video`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+  } catch (err: any) {
+    const msg = err?.message || "";
+    if (msg.includes("Load failed") || msg.includes("Failed to fetch")) {
+      throw new Error("Błąd sieci podczas wysyłania wideo (Load failed). Sprawdź połączenie.");
+    }
+    throw err;
+  }
 
   if (!response.ok) {
-    throw new Error(`Błąd wysyłania notatki wideo: ${response.status}`);
+    let detail = `Błąd wysyłania notatki wideo: ${response.status}`;
+    try {
+      const errData = await response.json();
+      if (errData?.detail?.message) detail = errData.detail.message;
+      else if (errData?.message) detail = errData.message;
+    } catch {}
+    throw new Error(detail);
   }
 
   return response.json();

@@ -331,39 +331,90 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId
     setRecordMode(mode);
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: mode === "video" ? { facingMode: "environment" } : false,
-      });
-      streamRef.current = stream;
-
-      if (mode === "video" && videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream;
-        videoPreviewRef.current.play();
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: mode === "video" ? {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 24, max: 30 }
+          } : false,
+        });
+      } catch {
+        // Fallback do prostych uprawnień jeśli zaawansowane ograniczenia nie są wspierane
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: mode === "video",
+        });
       }
+      streamRef.current = stream;
 
       let mimeType = "";
       if (mode === "video") {
-        if (MediaRecorder.isTypeSupported("video/webm")) mimeType = "video/webm";
-        else if (MediaRecorder.isTypeSupported("video/mp4")) mimeType = "video/mp4";
+        const videoTypes = [
+          "video/mp4;codecs=avc1,mp4a.40.2",
+          "video/mp4",
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=vp8,opus",
+          "video/webm"
+        ];
+        mimeType = videoTypes.find((t) => MediaRecorder.isTypeSupported(t)) || "";
       } else {
-        if (MediaRecorder.isTypeSupported("audio/webm")) mimeType = "audio/webm";
-        else if (MediaRecorder.isTypeSupported("audio/mp4")) mimeType = "audio/mp4";
+        const audioTypes = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+          "audio/aac"
+        ];
+        mimeType = audioTypes.find((t) => MediaRecorder.isTypeSupported(t)) || "";
       }
-      const options = mimeType ? { mimeType } : undefined;
-      const mediaRecorder = new MediaRecorder(stream, options);
+
+      const options: MediaRecorderOptions = {};
+      if (mimeType) options.mimeType = mimeType;
+      if (mode === "video") {
+        options.videoBitsPerSecond = 1500000;
+      } else {
+        options.audioBitsPerSecond = 128000;
+      }
+
+      let mediaRecorder: MediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(stream, Object.keys(options).length > 0 ? options : undefined);
+      } catch {
+        mediaRecorder = new MediaRecorder(stream);
+      }
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
+        if (e.data && e.data.size > 0) {
           chunksRef.current.push(e.data);
         }
       };
 
       mediaRecorder.onstop = async () => {
-        const blobType = mediaRecorderRef.current?.mimeType || (mode === "video" ? "video/webm" : "audio/webm");
+        // Zatrzymujemy strumień kamery/mikrofonu dopiero w onstop po zebraniu wszystkich chunków!
+        stopTracks();
+
+        if (chunksRef.current.length === 0) {
+          setError("Nie zarejestrowano danych nagrania. Upewnij się, że mikrofon/kamera działają i spróbuj ponownie.");
+          setRecordStatus("inactive");
+          setRecordingTime(0);
+          return;
+        }
+
+        const actualMime = mediaRecorderRef.current?.mimeType || mimeType || (mode === "video" ? "video/mp4" : "audio/webm");
         const blob = new Blob(chunksRef.current, {
-          type: blobType,
+          type: actualMime,
         });
+
+        if (blob.size === 0) {
+          setError("Plik nagrania jest pusty (0 B). Spróbuj nagrać ponownie.");
+          setRecordStatus("inactive");
+          setRecordingTime(0);
+          return;
+        }
+
         setRecordStatus("uploading");
         try {
           if (mode === "audio") {
@@ -381,13 +432,19 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId
         } catch (uploadErr: any) {
           setFailedBlob(blob);
           setFailedBlobType(mode);
-          setError(uploadErr.message || "Błąd wysyłania nagrania.");
+          const rawMsg = uploadErr?.message || "";
+          if (rawMsg.includes("Load failed") || rawMsg.includes("Failed to fetch")) {
+            setError("Błąd połączenia z serwerem podczas wysyłania (Load failed). Spróbuj ponownie za chwilę.");
+          } else {
+            setError(rawMsg || "Błąd wysyłania nagrania.");
+          }
           setRecordStatus("inactive");
         }
       };
 
       chunksRef.current = [];
-      mediaRecorder.start();
+      // Używamy timeslice 1000ms, aby dane spływały na bieżąco, co zapobiega utracie danych na iOS Safari
+      mediaRecorder.start(1000);
       mediaRecorderRef.current = mediaRecorder;
 
       setRecordStatus("recording");
@@ -402,19 +459,28 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId
   };
 
   const stopRecording = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      // Ważne: NIE wywołujemy stopTracks() tutaj, aby MediaRecorder zdążył domknąć bufor i wywołać ondataavailable + onstop!
       mediaRecorderRef.current.stop();
-      if (timerRef.current) clearInterval(timerRef.current);
-      stopTracks();
     }
   };
 
   const cancelRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
-      if (timerRef.current) clearInterval(timerRef.current);
-      stopTracks();
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.onstop = null;
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+    }
+    stopTracks();
     setRecordStatus("inactive");
     setRecordingTime(0);
     chunksRef.current = [];
@@ -721,10 +787,17 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId
               {recordMode === "video" && (
                 <>
                   <video
-                    ref={videoPreviewRef}
+                    ref={(el) => {
+                      videoPreviewRef.current = el;
+                      if (el && streamRef.current) {
+                        el.srcObject = streamRef.current;
+                        el.play().catch(() => {});
+                      }
+                    }}
                     className={`absolute inset-0 w-full h-full ${isVideoExpanded ? 'object-contain' : 'object-cover'}`}
                     muted
                     playsInline
+                    autoPlay
                   />
                   <button 
                     onClick={() => setIsVideoExpanded(!isVideoExpanded)}

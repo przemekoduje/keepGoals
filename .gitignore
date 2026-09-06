@@ -1,5 +1,6 @@
 # Środowisko
 .env
+.env.yaml
 __pycache__/
 *.pyc
 *.pyo
@@ -20,3 +21,5 @@ uploads/
 
 firebase-adminsdk.json
 caly_kod.md
+.DS_Store
+.firebase/

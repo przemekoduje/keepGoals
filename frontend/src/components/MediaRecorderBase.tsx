@@ -255,29 +255,62 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
           throw new Error('Brak dostępu do API mediów. Upewnij się, że używasz HTTPS lub localhost.');
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: { facingMode: 'environment' },
-        });
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              frameRate: { ideal: 24, max: 30 }
+            },
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: true,
+          });
+        }
         videoStreamRef.current = stream;
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
+        const videoTypes = [
+          'video/mp4;codecs=avc1,mp4a.40.2',
+          'video/mp4',
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm',
+        ];
+        const mime = videoTypes.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+
+        const mrOptions: MediaRecorderOptions = {};
+        if (mime) mrOptions.mimeType = mime;
+        mrOptions.videoBitsPerSecond = 1500000;
+
+        let mr: MediaRecorder;
+        try {
+          mr = new MediaRecorder(stream, Object.keys(mrOptions).length > 0 ? mrOptions : undefined);
+        } catch {
+          mr = new MediaRecorder(stream);
         }
-
-        let mime = '';
-        if (MediaRecorder.isTypeSupported('video/webm')) mime = 'video/webm';
-        else if (MediaRecorder.isTypeSupported('video/mp4')) mime = 'video/mp4';
-
-        const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
         videoRecorderRef.current = mr;
 
         mr.ondataavailable = (e) => {
-          if (e.data.size > 0) videoChunksRef.current.push(e.data);
+          if (e.data && e.data.size > 0) videoChunksRef.current.push(e.data);
         };
         mr.onstop = async () => {
-          const blob = new Blob(videoChunksRef.current, { type: mr.mimeType || 'video/webm' });
+          stopVideoTracks();
+          if (videoChunksRef.current.length === 0) {
+            setError('Nie udało się zarejestrować obrazu wideo. Sprawdź uprawnienia kamery.');
+            setRecordState('inactive');
+            return;
+          }
+          const blob = new Blob(videoChunksRef.current, { type: mr.mimeType || mime || 'video/mp4' });
+          if (blob.size === 0) {
+            setError('Plik nagrania wideo ma 0 B. Spróbuj nagrać ponownie.');
+            setRecordState('inactive');
+            return;
+          }
           await performUpload(blob, 'video');
         };
 
@@ -342,10 +375,9 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
       await performUpload(combinedBlob, 'audio');
 
     } else {
-      // Wideo
+      // Wideo - zatrzymujemy recorder; stopVideoTracks() wykona się w onstop!
       if (videoRecorderRef.current?.state === 'recording') {
         videoRecorderRef.current.stop();
-        stopVideoTracks();
       }
     }
   };
@@ -359,7 +391,10 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
     cleanupAudioWarmup();
 
     if (videoRecorderRef.current?.state === 'recording') {
-      videoRecorderRef.current.stop();
+      videoRecorderRef.current.onstop = null;
+      try {
+        videoRecorderRef.current.stop();
+      } catch {}
       stopVideoTracks();
     }
 
@@ -392,7 +427,12 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
       if (onUploadSuccess) onUploadSuccess();
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Wystąpił błąd podczas wysyłania.');
+      const rawMsg = err?.message || '';
+      if (rawMsg.includes('Load failed') || rawMsg.includes('Failed to fetch')) {
+        setError('Błąd połączenia z serwerem podczas wysyłania (Load failed). Spróbuj ponownie.');
+      } else {
+        setError(rawMsg || 'Wystąpił błąd podczas wysyłania.');
+      }
       setRecordState('inactive');
     }
   };
@@ -434,10 +474,17 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
             {mode === 'video' && (
               <>
                 <video
-                  ref={videoRef}
+                  ref={(el) => {
+                    videoRef.current = el;
+                    if (el && videoStreamRef.current) {
+                      el.srcObject = videoStreamRef.current;
+                      el.play().catch(() => {});
+                    }
+                  }}
                   className={`absolute inset-0 w-full h-full ${isVideoExpanded ? 'object-contain' : 'object-cover'}`}
                   muted
                   playsInline
+                  autoPlay
                 />
                 <button
                   onClick={() => setIsVideoExpanded(!isVideoExpanded)}

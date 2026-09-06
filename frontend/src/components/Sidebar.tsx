@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu, FolderKanban, Share2 } from 'lucide-react';
+import { Menu, FolderKanban, Share2, Globe } from 'lucide-react';
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -147,6 +147,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
 
       {/* Dolny pasek uzytkownika */}
       <div className={`px-4 pt-4 border-t border-slate-100 dark:border-slate-700 mt-auto flex flex-col ${showFull ? 'items-start' : 'items-center'}`}>
+        <a
+          href="https://przemokoduje.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Przejdź do przemokoduje.com"
+          className={`mb-3 flex items-center text-xs font-medium text-slate-500 hover:text-[#143109] dark:text-slate-400 dark:hover:text-white transition-colors py-1.5 px-2 rounded-lg hover:bg-[#EFEFEF] dark:hover:bg-slate-800 w-full ${showFull ? 'space-x-2' : 'justify-center'}`}
+        >
+          <Globe className="w-4 h-4 flex-shrink-0" />
+          {showFull && <span className="truncate">przemokoduje.com</span>}
+        </a>
+
         {showFull ? (
           <>
             <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-3 truncate w-full px-2" title={user?.email || ""}>

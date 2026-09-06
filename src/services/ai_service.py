@@ -32,14 +32,21 @@ def get_ai_client_and_model(task_type: str = "llm") -> tuple[OpenAI, str]:
     Zwraca odpowiedniego klienta (Groq lub OpenAI) oraz nazwę modelu w zależności od konfiguracji.
     task_type: "llm" lub "whisper"
     """
-    if settings.GROQ_API_KEY:
-        client = get_groq_client()
-        model = "whisper-large-v3" if task_type == "whisper" else "llama-3.3-70b-versatile"
-        return client, model
+    if task_type == "whisper":
+        if settings.GROQ_API_KEY:
+            return get_groq_client(), "whisper-large-v3"
+        elif settings.OPENAI_API_KEY:
+            return get_openai_client(), "whisper-1"
+        else:
+            return get_openai_client(), "whisper-1"
     else:
-        client = get_openai_client()
-        model = "whisper-1" if task_type == "whisper" else "gpt-4o-mini"
-        return client, model
+        # Do zadań językowych (strukturyzacja notatki, plan, mentor) używamy gpt-4o-mini
+        if settings.OPENAI_API_KEY:
+            return get_openai_client(), "gpt-4o-mini"
+        elif settings.GROQ_API_KEY:
+            return get_groq_client(), "openai/gpt-oss-120b"
+        else:
+            return get_openai_client(), "gpt-4o-mini"
 
 def generate_morning_plan(strategic_goals: list[str]) -> str:
     """
@@ -256,19 +263,30 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
         temp_path = extract_audio_for_whisper(file_bytes, mime_type)
 
         try:
-            # Pobierz odpowiedniego klienta i model dla transkrypcji
-            whisper_client, whisper_model = get_ai_client_and_model("whisper")
-            
-            # Transkrypcja pliku za pomocą modelu Whisper
-            with open(temp_path, "rb") as audio_file:
-                transcript = whisper_client.audio.transcriptions.create(
-                    model=whisper_model,
-                    file=audio_file,
-                    language="pl",
-                    prompt="Polska narada budowlana, geotechnika, fundamenty, palowanie, dokumentacja techniczna, harmonogram prac, notatki projektowe, cele biznesowe."
-                )
-                
-            transcribed_text = transcript.text
+            # Transkrypcja pliku za pomocą modelu Whisper (z automatycznym fallbackiem)
+            transcribed_text = ""
+            try:
+                whisper_client, whisper_model = get_ai_client_and_model("whisper")
+                with open(temp_path, "rb") as audio_file:
+                    transcript = whisper_client.audio.transcriptions.create(
+                        model=whisper_model,
+                        file=audio_file,
+                        language="pl",
+                        prompt="Polska narada, cele, zadania, notatki, planowanie."
+                    )
+                transcribed_text = transcript.text
+            except Exception as whisper_err:
+                print(f"[Whisper Primary Failed: {whisper_err}]. Próba OpenAI whisper-1...")
+                if settings.OPENAI_API_KEY:
+                    with open(temp_path, "rb") as audio_file:
+                        transcript = get_openai_client().audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file,
+                            language="pl"
+                        )
+                    transcribed_text = transcript.text
+                else:
+                    raise whisper_err
             
             # Opcjonalne zabezpieczenie przed pustą transkrypcją
             if not transcribed_text.strip():

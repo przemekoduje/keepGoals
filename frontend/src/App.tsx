@@ -14,10 +14,12 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { MainLayout } from "./layouts/MainLayout";
 
 function App() {
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
+
   return (
     <AuthProvider>
       <UserProfilesProvider>
-        <Router>
+        <Router basename={basename}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route

@@ -12,15 +12,6 @@ import type { MainLayoutContextType } from "../layouts/MainLayout";
 import { useUserProfiles } from "../contexts/UserProfilesContext";
 
 
-const breakpointColumnsObj = {
-  default: 6,
-  1536: 5, // 2xl
-  1280: 4, // xl
-  1024: 3, // lg
-  768: 2,  // md
-  640: 1   // sm
-};
-
 export const Dashboard: React.FC = () => {
   const context = useOutletContext<MainLayoutContextType | null>();
   const { fetchProfiles } = useUserProfiles();

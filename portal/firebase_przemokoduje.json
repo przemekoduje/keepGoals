@@ -1,0 +1,43 @@
+{
+  "hosting": {
+    "public": "frontend/build",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "ai-english-buddy-backend",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/speakling/mobile/**",
+        "destination": "/speakling/mobile/index.html"
+      },
+      {
+        "source": "/speakling",
+        "destination": "/speakling.html"
+      },
+      {
+        "source": "/speakling/**",
+        "destination": "/speakling.html"
+      },
+      {
+        "source": "/keepgoals",
+        "destination": "/keepgoals/index.html"
+      },
+      {
+        "source": "/keepgoals/**",
+        "destination": "/keepgoals/index.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

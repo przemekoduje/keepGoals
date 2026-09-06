@@ -30,8 +30,14 @@ export const Login: React.FC = () => {
       console.error(err);
       if (err?.code === 'auth/configuration-not-found') {
         setError("Usługa Firebase Authentication nie jest jeszcze włączona. Aktywuj ją w konsoli Firebase (Build -> Authentication -> Rozpocznij).");
+      } else if (err?.code === 'auth/unauthorized-domain') {
+        setError("Domena nie jest jeszcze autoryzowana w Firebase Auth (auth/unauthorized-domain). Odczekaj chwilę lub odśwież stronę.");
+      } else if (err?.code === 'auth/popup-closed-by-user') {
+        setError("Okno logowania Google zostało zamknięte przed ukończeniem.");
+      } else if (err?.code === 'auth/cancelled-popup-request') {
+        // Ignoruj wielokrotne kliknięcia
       } else {
-        setError(`Logowanie przez ${providerName} nie powiodło się. Wypróbuj e-mail lub zaloguj się ponownie.`);
+        setError(`Logowanie przez ${providerName} nie powiodło się (${err?.code || err?.message || 'Błąd autoryzacji'}).`);
       }
     }
   };
