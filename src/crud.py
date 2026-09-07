@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-from src.schemas import NoteCreate, NoteUpdate, NoteReorderRequest, UserSettingsBase, ProjectCreate, ProjectUpdate, TeamCreate, TeamUpdate
+from src.schemas import NoteCreate, NoteUpdate, NoteReorderRequest, UserSettingsBase, ProjectCreate, ProjectUpdate, TeamCreate, TeamUpdate, GoalCreate, GoalUpdate
 
 def get_notes_ref(db, uid: str):
     """
@@ -460,3 +460,97 @@ def reorder_notes(db, uid: str, reorder_request: NoteReorderRequest) -> bool:
         
     batch.commit()
     return True
+
+def get_goals_ref(db, uid: str):
+    """
+    Zwraca referencję do subkolekcji celów zalogowanego użytkownika:
+    users/{uid}/goals
+    """
+    return db.collection("users").document(uid).collection("goals")
+
+def create_goal(db, uid: str, goal_in: GoalCreate) -> Dict[str, Any]:
+    goals_ref = get_goals_ref(db, uid)
+    doc_ref = goals_ref.document()
+    
+    goal_data = goal_in.model_dump()
+    goal_data["user_id"] = uid
+    goal_data["created_at"] = datetime.now(timezone.utc)
+    goal_data["updated_at"] = datetime.now(timezone.utc)
+    
+    doc_ref.set(goal_data)
+    goal_data["id"] = doc_ref.id
+    return goal_data
+
+def get_goals(db, uid: str, horizon: Optional[str] = None, is_completed: Optional[bool] = None) -> List[Dict[str, Any]]:
+    goals_ref = get_goals_ref(db, uid)
+    docs = goals_ref.stream()
+    
+    goals = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        if horizon and data.get("horizon") != horizon:
+            continue
+        if is_completed is not None and data.get("is_completed", False) != is_completed:
+            continue
+        goals.append(data)
+        
+    def get_sort_key(g):
+        order = g.get("order", 0)
+        val = g.get("created_at")
+        dt = datetime.min.replace(tzinfo=timezone.utc)
+        if isinstance(val, str):
+            try:
+                dt = datetime.fromisoformat(val)
+            except:
+                pass
+        elif val:
+            dt = val
+        return (order, -dt.timestamp())
+        
+    goals.sort(key=get_sort_key)
+    return goals
+
+def get_goal(db, uid: str, goal_id: str) -> Optional[Dict[str, Any]]:
+    goals_ref = get_goals_ref(db, uid)
+    doc = goals_ref.document(goal_id).get()
+    if not doc.exists:
+        return None
+    data = doc.to_dict()
+    data["id"] = doc.id
+    return data
+
+def update_goal(db, uid: str, goal_id: str, goal_update: GoalUpdate) -> Optional[Dict[str, Any]]:
+    goals_ref = get_goals_ref(db, uid)
+    doc_ref = goals_ref.document(goal_id)
+    doc = doc_ref.get()
+    if not doc.exists:
+        return None
+        
+    update_data = goal_update.model_dump(exclude_unset=True)
+    if not update_data:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        return data
+        
+    update_data["updated_at"] = datetime.now(timezone.utc)
+    if "is_completed" in update_data:
+        if update_data["is_completed"] and not update_data.get("completed_at"):
+            update_data["completed_at"] = datetime.now(timezone.utc)
+        elif not update_data["is_completed"]:
+            update_data["completed_at"] = None
+
+    doc_ref.update(update_data)
+    updated_doc = doc_ref.get()
+    data = updated_doc.to_dict()
+    data["id"] = updated_doc.id
+    return data
+
+def delete_goal(db, uid: str, goal_id: str) -> bool:
+    goals_ref = get_goals_ref(db, uid)
+    doc_ref = goals_ref.document(goal_id)
+    if not doc_ref.get().exists:
+        return False
+    doc_ref.delete()
+    return True
+

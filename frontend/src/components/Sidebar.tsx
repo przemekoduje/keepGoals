@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu, FolderKanban, Share2, Globe } from 'lucide-react';
+import { Menu, FolderKanban, Share2, Globe, Target } from 'lucide-react';
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -98,21 +98,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, isCollapsed = fals
             </NavLink>
           </li>
           <li>
-            <div 
-              className={`flex items-center py-3 font-semibold transition-all duration-200 text-sm opacity-50 cursor-not-allowed text-slate-400 dark:text-slate-500 ${showFull ? 'px-4 space-x-3 rounded-r-full' : 'justify-center mx-2 rounded-full'}`}
-              title="Goals module coming soon"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 flex-shrink-0">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-              {showFull && (
-                <div className="flex items-center justify-between w-full overflow-hidden">
-                  <span className="whitespace-nowrap">goals</span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded ml-2">Soon</span>
-                </div>
-              )}
-            </div>
+            <NavLink to="/goals" className={navItemClass} onClick={onNavigate}>
+              <Target className="w-5 h-5 flex-shrink-0" />
+              {showFull && <span className="whitespace-nowrap overflow-hidden">goals</span>}
+            </NavLink>
           </li>
+
           <li>
             <NavLink to="/projects" className={navItemClass} onClick={onNavigate}>
               <FolderKanban className="w-5 h-5 flex-shrink-0" />

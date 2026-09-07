@@ -1,42 +1,41 @@
-# Plan Kroku 15: Multimodalny Backend (FastAPI + Gemini)
+# Plan Kroku 16: Rozwój Zakładki Celów Strategicznych (/goals) — Etap 1: Fundamenty OKR i Nowoczesny UI
 
 ## Cel operacyjny
-Rozbudowa warstwy backendowej o przyjmowanie plików binarnych (audio/wideo) z frontendu, przekazanie surowych strumieni do agenta AI (Gemini) w celu wygenerowania ustrukturyzowanej notatki (tytuł, szczegółowe podsumowanie, tagi) oraz zapis danych w bazie.
+Transformacja zakładki `/goals` z obecnego zablokowanego placeholdera w pełnoprawny, interaktywny pulpit celów strategicznych oparty na wytycznych z bazy wiedzy NotebookLM, filozofii „Personal-First” oraz estetyce Google Keep.
 
-## Architektura Rozwiązania
+## Architektura Rozwiązania (Etap 1)
 
-### [MODIFY] `src/services/ai_service.py`
-Rozszerzenie serwisu integracji AI o analitykę multimediów z wykorzystaniem modeli Gemini (np. `gemini-1.5-pro` lub `gemini-1.5-flash`), które natywnie wspierają konsumpcję audio i wideo.
-- **Nowe metody**:
-  - `analyze_audio_note(file_bytes: bytes, mime_type: str) -> dict`
-  - `analyze_video_note(file_bytes: bytes, mime_type: str) -> dict`
-- **Logika**:
-  - Przekazanie bajtów (jako inline data base64) oraz przypisanego typu MIME do API Gemini.
-  - Sformułowanie precyzyjnego promptu systemowego nakazującego wyciągnięcie kluczowych informacji, wygenerowanie odpowiedniego, chwytliwego tytułu oraz sformatowanej transkrypcji/opisu w formacie Markdown.
-  - Zwrócenie ustrukturyzowanego wyniku (JSON) zgodnego ze schematami naszej aplikacji (tytuł, treść, typ notatki).
+### [MODIFY] `src/schemas.py`
+Wprowadzenie dedykowanych struktur Pydantic dla celów strategicznych:
+- `GoalHorizon`: Enum (`long_term`, `quarterly`, `monthly`)
+- `KeyResult`: `title`, `current_value`, `target_value`, `unit`
+- `GoalBase`, `GoalCreate`, `GoalUpdate`, `GoalResponse`
 
-### [MODIFY] `src/routers/notes.py`
-Dodanie nowych kontrolerów nasłuchujących na przesył plików z frontendu.
-- **Endpointy**:
-  - `POST /api/v1/notes/audio`
-  - `POST /api/v1/notes/video`
-- **Logika kontrolerów**:
-  - Wymaganie autoryzacji (zależność `get_current_user` odczytująca token JWT).
-  - Wstrzyknięcie pliku z użyciem klasy `UploadFile` (FastAPI: `file: UploadFile = File(...)`).
-  - Załadowanie binarnej zawartości do pamięci serwera (`await file.read()`).
-  - Przekazanie surowych bajtów do odpowiedniej funkcji analitycznej z `ai_service.py`.
-  - Powołanie do życia nowej struktury bazodanowej (`schemas.NoteCreate`) przy wykorzystaniu rezultatu analizy.
-  - Wywołanie `crud.create_note(...)` z zapisem do bazy.
-  - Zwrócenie nowo wygenerowanej notatki do klienta (odświeżenie interfejsu).
+### [MODIFY] `src/crud.py`
+Dodanie operacji bazodanowych dla Firestore w kolekcji `goals` z izolacją UID:
+- `create_goal`, `get_user_goals`, `get_goal`, `update_goal`, `delete_goal`
 
-### [MODIFY] `tests/test_notes.py`
-Opracowanie rygorystycznych testów jednostkowych zapobiegających regresji.
-- **Strategia testowania**:
-  - Zaślepienie (`mocking`) wywołań w `ai_service.py`, aby testy nie konsumowały limitów zewnętrznego API LLM, zapewniały izolację i determinizm.
-  - Zasymulowanie przesyłania plików z użyciem metody `.post()` w `TestClient`, wstrzykując fikcyjne pliki audio i wideo:
-    `client.post(..., files={"file": ("test.webm", b"dummy_data", "video/webm")})`
-  - Weryfikacja odpowiedniej struktury obiektu zwracanego (status `200 OK` i potwierdzenie mapowania wygenerowanej przez mock treści na model `Note`).
+### [NEW] `src/routers/goals.py`
+Kontroler FastAPI z pełnym zestawem endpointów pod `/api/v1/goals`.
+
+### [MODIFY] `src/main.py`
+Rejestracja routera celów strategicznych.
+
+### [NEW] `tests/test_goals.py`
+Testy jednostkowe i integracyjne API celów.
+
+### [MODIFY] `frontend/src/services/api.ts`
+Typy TypeScript i wywołania API dla celów strategicznych.
+
+### [NEW] `frontend/src/components/GoalCard.tsx`
+Pastelowa karta celu z suwakami/paskami Key Results, etykietą projektu i odznaką horyzontu.
+
+### [NEW] `frontend/src/components/GoalModal.tsx`
+Modal dodawania i edycji celu z dynamicznymi wskaźnikami Key Results.
+
+### [MODIFY] `frontend/src/pages/Goals.tsx`
+Przebudowa widoku z filtrami horyzontów, siatką celów i zwijanym Archiwum Sukcesów.
 
 ---
 **TWARDY STOP (Halt)**
-Infrastruktura pod obsługę `UploadFile` oraz multimodalne prompty Gemini zostały zaplanowane. Pliki oczekują na fizyczną modyfikację kodu. Proszę o zaakceptowanie zaprojektowanej architektury, aby przystąpić do zmian.
+Architektura Etapu 1 została zaplanowana. Zgodnie z Manifestem oczekuję na komendę **„Dalej”** lub uwagi od Architekta, aby przystąpić do modyfikacji kodu.

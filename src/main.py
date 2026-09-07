@@ -7,6 +7,7 @@ from src.routers.notes import router as notes_router, public_router as public_no
 from src.routers.plans import router as plans_router
 from src.routers.users import router as users_router
 from src.routers.projects import router as projects_router
+from src.routers.goals import router as goals_router
 
 app = FastAPI(title="KeepGoals API")
 
@@ -33,4 +34,5 @@ app.include_router(public_notes_router)
 app.include_router(plans_router)
 app.include_router(users_router)
 app.include_router(projects_router)
+app.include_router(goals_router)
 

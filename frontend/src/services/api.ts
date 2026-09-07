@@ -610,3 +610,107 @@ export async function completePublicNote(shareToken: string): Promise<void> {
     throw new Error(`Błąd podczas oznaczania jako zrealizowane: ${response.status}`);
   }
 }
+
+export type GoalHorizon = 'long_term' | 'quarterly' | 'monthly';
+
+export interface KeyResult {
+  id?: string;
+  title: string;
+  current_value: number;
+  target_value: number;
+  unit: string;
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  description?: string;
+  horizon: GoalHorizon;
+  key_results: KeyResult[];
+  project_id?: string;
+  color?: string;
+  is_completed: boolean;
+  completed_at?: string;
+  order: number;
+  user_id: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CreateGoalPayload {
+  title: string;
+  description?: string;
+  horizon?: GoalHorizon;
+  key_results?: KeyResult[];
+  project_id?: string;
+  color?: string;
+  is_completed?: boolean;
+  order?: number;
+}
+
+export interface UpdateGoalPayload {
+  title?: string;
+  description?: string;
+  horizon?: GoalHorizon;
+  key_results?: KeyResult[];
+  project_id?: string | null;
+  color?: string;
+  is_completed?: boolean;
+  completed_at?: string | null;
+  order?: number;
+}
+
+export async function fetchGoals(horizon?: GoalHorizon, isCompleted?: boolean): Promise<Goal[]> {
+  const headers = await getAuthHeaders();
+  const params = new URLSearchParams();
+  if (horizon) params.append("horizon", horizon);
+  if (isCompleted !== undefined) params.append("is_completed", String(isCompleted));
+  
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const response = await fetch(`${API_URL}/api/v1/goals${query}`, {
+    method: "GET",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd pobierania celów: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function createGoal(payload: CreateGoalPayload): Promise<Goal> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/goals`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd tworzenia celu: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function updateGoal(goalId: string, payload: UpdateGoalPayload): Promise<Goal> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/goals/${goalId}`, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd aktualizacji celu: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function deleteGoal(goalId: string): Promise<void> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/goals/${goalId}`, {
+    method: "DELETE",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd usuwania celu: ${response.status}`);
+  }
+}
+

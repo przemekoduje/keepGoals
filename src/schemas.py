@@ -177,4 +177,52 @@ class DelegationResponse(DelegationBase):
 
 NoteResponse.model_rebuild()
 
+class GoalHorizon(str, Enum):
+    long_term = "long_term"  # Roczny / Długoterminowy
+    quarterly = "quarterly"  # Kwartalny
+    monthly = "monthly"      # Miesięczny
+
+class KeyResult(BaseModel):
+    id: Optional[str] = None
+    title: str = Field(..., description="Nazwa rezultatu kluczowego")
+    current_value: float = Field(default=0.0, description="Aktualna wartość")
+    target_value: float = Field(default=100.0, description="Wartość docelowa")
+    unit: str = Field(default="%", description="Jednostka miary (%, PLN, szt, h)")
+
+class GoalBase(BaseModel):
+    title: str = Field(..., description="Tytuł celu strategicznego")
+    description: Optional[str] = Field(default="", description="Opis lub założenia celu")
+    horizon: GoalHorizon = Field(default=GoalHorizon.quarterly, description="Horyzont czasowy celu")
+    key_results: List[KeyResult] = Field(default=[], description="Lista kluczowych rezultatów (Key Results)")
+    project_id: Optional[str] = Field(default=None, description="Identyfikator powiązanego projektu")
+    color: Optional[str] = Field(default="#fef3c7", description="Kolor kafelka w stylu Google Keep")
+    is_completed: bool = Field(default=False, description="Czy cel został zrealizowany")
+    completed_at: Optional[datetime] = Field(default=None, description="Data ukończenia celu")
+    order: int = Field(default=0, description="Kolejność sortowania")
+
+class GoalCreate(GoalBase):
+    pass
+
+class GoalUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    horizon: Optional[GoalHorizon] = None
+    key_results: Optional[List[KeyResult]] = None
+    project_id: Optional[str] = None
+    color: Optional[str] = None
+    is_completed: Optional[bool] = None
+    completed_at: Optional[datetime] = None
+    order: Optional[int] = None
+
+class GoalResponse(GoalBase):
+    id: str = Field(..., description="Identyfikator celu z Firestore")
+    user_id: str = Field(..., description="Identyfikator właściciela (uid)")
+    created_at: datetime = Field(..., description="Timestamp utworzenia celu")
+    updated_at: Optional[datetime] = Field(default=None, description="Timestamp ostatniej modyfikacji")
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
 
