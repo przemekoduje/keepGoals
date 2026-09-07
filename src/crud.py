@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-from src.schemas import NoteCreate, NoteUpdate, NoteReorderRequest, UserSettingsBase, ProjectCreate, ProjectUpdate, TeamCreate, TeamUpdate, GoalCreate, GoalUpdate
+from src.schemas import NoteCreate, NoteUpdate, NoteReorderRequest, UserSettingsBase, ProjectCreate, ProjectUpdate, TeamCreate, TeamUpdate, GoalCreate, GoalUpdate, AxisTileItem
 
 def get_notes_ref(db, uid: str):
     """
@@ -553,4 +553,23 @@ def delete_goal(db, uid: str, goal_id: str) -> bool:
         return False
     doc_ref.delete()
     return True
+
+def get_axis_tiles_ref(db, uid: str):
+    return db.collection("users").document(uid).collection("settings").document("axis_tiles")
+
+def get_axis_tiles(db, uid: str) -> List[Dict[str, Any]]:
+    doc = get_axis_tiles_ref(db, uid).get()
+    if doc.exists:
+        data = doc.to_dict()
+        return data.get("tiles", [])
+    return []
+
+def save_axis_tiles(db, uid: str, tiles: List[AxisTileItem]) -> List[Dict[str, Any]]:
+    doc_ref = get_axis_tiles_ref(db, uid)
+    tiles_data = [t.model_dump() for t in tiles]
+    doc_ref.set({
+        "tiles": tiles_data,
+        "updated_at": datetime.now(timezone.utc)
+    })
+    return tiles_data
 

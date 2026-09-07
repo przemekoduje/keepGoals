@@ -224,5 +224,11 @@ class GoalResponse(GoalBase):
         "from_attributes": True
     }
 
+class AxisTileItem(BaseModel):
+    id: str = Field(..., description="Unikalny identyfikator kafelka")
+    title: str = Field(..., description="Tytuł / etykieta kafelka")
+    x: float = Field(..., description="Pozycja X na osi w procentach (np. 5 - 95)")
+    y: float = Field(..., description="Pozycja Y (wysokość / waga) w procentach (np. 14 - 84)")
 
-
+class AxisTilesPayload(BaseModel):
+    tiles: List[AxisTileItem] = Field(default=[], description="Lista kafelków na osi")

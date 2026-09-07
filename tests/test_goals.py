@@ -132,3 +132,42 @@ def test_goal_user_isolation():
     # User 2 list should not contain User 1's goal
     beta_list = client.get("/api/v1/goals").json()
     assert not any(g["id"] == alpha_goal_id for g in beta_list)
+
+def test_axis_tiles_persistence():
+    # 1. Fetch initially empty
+    app.dependency_overrides[verify_token] = lambda: {"uid": "user_axis_1", "email": "axis1@example.com"}
+    init_res = client.get("/api/v1/goals/axis-tiles")
+    assert init_res.status_code == 200
+    assert init_res.json() == []
+
+    # 2. Save tiles
+    tiles = [
+        {"id": "t1", "title": "Social media", "x": 15.5, "y": 80.0},
+        {"id": "t2", "title": "Projekt strategiczny", "x": 85.0, "y": 70.0}
+    ]
+    put_res = client.put("/api/v1/goals/axis-tiles", json={"tiles": tiles})
+    assert put_res.status_code == 200
+    saved_data = put_res.json()
+    assert len(saved_data) == 2
+    assert saved_data[0]["title"] == "Social media"
+    assert saved_data[1]["x"] == 85.0
+
+    # 3. Read back
+    get_res = client.get("/api/v1/goals/axis-tiles")
+    assert get_res.status_code == 200
+    data = get_res.json()
+    assert len(data) == 2
+    assert data[0]["id"] == "t1"
+    assert data[1]["id"] == "t2"
+
+def test_axis_tiles_user_isolation():
+    # User A saves tiles
+    app.dependency_overrides[verify_token] = lambda: {"uid": "user_a", "email": "a@example.com"}
+    tiles_a = [{"id": "ta", "title": "Kafelki A", "x": 30.0, "y": 40.0}]
+    client.put("/api/v1/goals/axis-tiles", json={"tiles": tiles_a})
+
+    # User B should see empty tiles
+    app.dependency_overrides[verify_token] = lambda: {"uid": "user_b", "email": "b@example.com"}
+    res_b = client.get("/api/v1/goals/axis-tiles")
+    assert res_b.status_code == 200
+    assert res_b.json() == []

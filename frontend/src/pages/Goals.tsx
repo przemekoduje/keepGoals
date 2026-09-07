@@ -1,14 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, X, RotateCcw } from "lucide-react";
+import { Plus, X, RotateCcw, Cloud, Check } from "lucide-react";
+import { fetchAxisTiles, saveAxisTiles, type AxisTile } from "../services/api";
 
-export interface InteractiveTile {
-  id: string;
-  title: string;
-  x: number; // 5 do 95 (% szerokości)
-  y: number; // 12 do 88 (% wysokości od dołu)
-}
-
-const DEFAULT_TILES: InteractiveTile[] = [
+const DEFAULT_TILES: AxisTile[] = [
   { id: "tile-1", title: "Social media & TV", x: 15, y: 78 },
   { id: "tile-2", title: "Serial po pracy", x: 28, y: 42 },
   { id: "tile-3", title: "Bieżące e-maile", x: 50, y: 22 },
@@ -16,29 +10,82 @@ const DEFAULT_TILES: InteractiveTile[] = [
   { id: "tile-5", title: "Wdrożenie projektu", x: 88, y: 82 },
 ];
 
-const STORAGE_KEY = "keepgoals_ultra_minimal_axis_v4";
+const STORAGE_KEY = "keepgoals_ultra_minimal_axis_v5";
 
 export const Goals: React.FC = () => {
-  const [tiles, setTiles] = useState<InteractiveTile[]>(() => {
+  // 1. Natychmiastowe wczytanie z pamięci lokalnej (0 ms opóźnienia)
+  const [tiles, setTiles] = useState<AxisTile[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch {
-      // fallback
+      // fallback do DEFAULT_TILES
     }
     return DEFAULT_TILES;
   });
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("saved");
+  const isLoadedFromBackendRef = useRef(false);
 
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
 
+  // 2. Bezpieczny i trwały zapis do bazy danych w chmurze
+  const syncToCloud = useCallback(async (tilesToSave: AxisTile[]) => {
+    try {
+      setSaveStatus("saving");
+      await saveAxisTiles(tilesToSave);
+      setSaveStatus("saved");
+    } catch (err) {
+      console.warn("Błąd zapisu do chmury (zapis zachowany w localStorage):", err);
+      setSaveStatus("error");
+    }
+  }, []);
+
+  // 3. Pobranie z chmury po zamontowaniu komponentu
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTiles() {
+      try {
+        const remoteTiles = await fetchAxisTiles();
+        if (!isMounted) return;
+
+        if (remoteTiles && remoteTiles.length > 0) {
+          setTiles(remoteTiles);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteTiles));
+          setSaveStatus("saved");
+        } else {
+          // Jeśli baza w chmurze jest pusta, zainicjalizuj ją bieżącymi kafelkami
+          syncToCloud(tiles);
+        }
+      } catch (err) {
+        console.warn("Nie udało się pobrać kafelków z chmury, używam localStorage:", err);
+      } finally {
+        if (isMounted) {
+          isLoadedFromBackendRef.current = true;
+        }
+      }
+    }
+
+    loadTiles();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [syncToCloud]);
+
+  // 4. Natychmiastowy zapis do localStorage przy każdej zmianie
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tiles));
   }, [tiles]);
 
+  // Obsługa pozycji podczas przeciągania kafelka
   const updateTilePosition = useCallback(
     (tileId: string, clientX: number, clientY: number) => {
       if (!canvasRef.current) return;
@@ -85,6 +132,9 @@ export const Goals: React.FC = () => {
         // ignore
       }
       setActiveDragId(null);
+
+      // Po zakończeniu upuszczenia kafelka, natychmiast synchronizujemy z chmurą
+      syncToCloud(tiles);
     }
   };
 
@@ -92,25 +142,30 @@ export const Goals: React.FC = () => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    const newTile: InteractiveTile = {
+    const newTile: AxisTile = {
       id: `tile-${Date.now()}`,
       title: newTitle.trim(),
       x: 50,
       y: 50,
     };
 
-    setTiles([...tiles, newTile]);
+    const updated = [...tiles, newTile];
+    setTiles(updated);
     setNewTitle("");
     setIsModalOpen(false);
+    syncToCloud(updated);
   };
 
   const handleDeleteTile = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setTiles((prev) => prev.filter((t) => t.id !== id));
+    const updated = tiles.filter((t) => t.id !== id);
+    setTiles(updated);
+    syncToCloud(updated);
   };
 
   const handleReset = () => {
     setTiles(DEFAULT_TILES);
+    syncToCloud(DEFAULT_TILES);
   };
 
   const getTileMetrics = (x: number, y: number, isDragging: boolean) => {
@@ -147,12 +202,36 @@ export const Goals: React.FC = () => {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Pasek kontrolny */}
-      <div className="flex items-center justify-end space-x-2 w-full">
+      {/* Pasek kontrolny z minimalistycznym wskaźnikiem zapisu */}
+      <div className="flex items-center justify-end space-x-3 w-full">
+        {/* Dyskretny status zapisu */}
+        <div
+          onClick={() => syncToCloud(tiles)}
+          title="Kliknij, aby wymusić synchronizację w chmurze"
+          className="cursor-pointer flex items-center space-x-1 px-2 py-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+        >
+          {saveStatus === "saving" ? (
+            <>
+              <Cloud className="w-3.5 h-3.5 animate-pulse text-amber-500" />
+              <span className="text-[11px] font-medium text-amber-500">Zapisywanie...</span>
+            </>
+          ) : saveStatus === "error" ? (
+            <>
+              <Cloud className="w-3.5 h-3.5 text-rose-400" />
+              <span className="text-[11px] font-medium text-rose-400">Zapisano lokalnie</span>
+            </>
+          ) : (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-500" />
+              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Zapisano</span>
+            </>
+          )}
+        </div>
+
         <button
           onClick={handleReset}
           className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-          title="Reset"
+          title="Przywróć domyślne"
         >
           <RotateCcw className="w-4 h-4" />
         </button>
@@ -179,7 +258,6 @@ export const Goals: React.FC = () => {
             Cel
           </div>
         </div>
-
 
         {/* KAFELKI NA PRZESTRZENI */}
         {tiles.map((tile) => {
@@ -255,7 +333,7 @@ export const Goals: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-800 dark:text-white">
+              <span className="text-xs font-bold text-slate-800 dark:white">
                 Nowy kafelek
               </span>
               <button

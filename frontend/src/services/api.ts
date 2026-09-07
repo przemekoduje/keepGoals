@@ -714,3 +714,35 @@ export async function deleteGoal(goalId: string): Promise<void> {
   }
 }
 
+export interface AxisTile {
+  id: string;
+  title: string;
+  x: number;
+  y: number;
+}
+
+export async function fetchAxisTiles(): Promise<AxisTile[]> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/goals/axis-tiles`, {
+    method: "GET",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd pobierania kafelków osi: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function saveAxisTiles(tiles: AxisTile[]): Promise<AxisTile[]> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/goals/axis-tiles`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ tiles }),
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd zapisu kafelków osi: ${response.status}`);
+  }
+  return response.json();
+}
+
