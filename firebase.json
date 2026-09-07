@@ -18,5 +18,8 @@
         "type": 301
       }
     ]
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
