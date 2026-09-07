@@ -18,5 +18,19 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react')) return 'vendor-react'
+            if (id.includes('firebase')) return 'vendor-firebase'
+            if (id.includes('lucide-react')) return 'vendor-icons'
+            return 'vendor-libs'
+          }
+        }
+      }
+    }
   }
 })

@@ -59,6 +59,9 @@ with open(".env.yaml", "w") as f:
         --project "$PROJECT_ID" \
         --platform managed \
         --allow-unauthenticated \
+        --memory 1Gi \
+        --min-instances 1 \
+        --timeout 300s \
         ${ENV_FLAG} \
         --quiet
 
