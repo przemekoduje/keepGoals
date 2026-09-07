@@ -171,3 +171,20 @@ def test_axis_tiles_user_isolation():
     res_b = client.get("/api/v1/goals/axis-tiles")
     assert res_b.status_code == 200
     assert res_b.json() == []
+
+def test_goal_ai_chat():
+    app.dependency_overrides[verify_token] = lambda: {"uid": "user_chat_1", "email": "chat1@example.com"}
+    payload = {
+        "messages": [
+            {"role": "user", "content": "Jaki powinien być mój kolejny kafelek na osi?"}
+        ],
+        "current_tiles": [
+            {"id": "t1", "title": "Social media & TV", "x": 15.0, "y": 78.0},
+            {"id": "t2", "title": "Wdrożenie projektu", "x": 88.0, "y": 82.0}
+        ]
+    }
+    res = client.post("/api/v1/goals/ai-chat", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert "response" in data
+    assert len(data["response"]) > 0

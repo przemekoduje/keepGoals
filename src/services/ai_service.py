@@ -40,9 +40,14 @@ def get_ai_client_and_model(task_type: str = "llm") -> tuple[OpenAI, str]:
         else:
             return get_openai_client(), "whisper-1"
     else:
-        # Do zadań językowych (strukturyzacja notatki, plan, mentor) używamy gpt-4o-mini
+        # Do zadań językowych (strukturyzacja notatki, plan, mentor) używamy gpt-4o-mini lub modeli Gemini / Groq
         if settings.OPENAI_API_KEY:
             return get_openai_client(), "gpt-4o-mini"
+        elif settings.GEMINI_API_KEY:
+            return OpenAI(
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                api_key=settings.GEMINI_API_KEY
+            ), "gemini-2.5-flash"
         elif settings.GROQ_API_KEY:
             return get_groq_client(), "openai/gpt-oss-120b"
         else:
@@ -514,3 +519,80 @@ def generate_handoff_summary(note_content: str, delegate_name: str) -> str:
     except Exception as e:
         print(f"Błąd OpenAI/Groq API w generowaniu handoff summary: {e}")
         return f"Zadanie przekazane do {delegate_name}. Brak dodatkowego podsumowania."
+
+GOALS_CHAT_SYSTEM_PROMPT = """
+Jesteś strategicznym doradcą i partnerem w realizacji celów (AI Goal & Focus Coach) w aplikacji keepGoals.
+Twoją misją jest pomóc użytkownikowi w planowaniu, priorytetyzacji oraz realizacji jego celów w oparciu o wizualną przestrzeń 2D.
+
+Zrozumienie przestrzeni 2D w keepGoals:
+1. Oś pozioma X (0% - 100%):
+   - Lewa strona (X < 40%): Rozproszenia, pożeracze czasu, nieproduktywne nawyki („Brak realizacji”).
+   - Prawa strona (X > 60%): Kluczowe cele, priorytety o wysokiej dźwigni („Cel”).
+   - Środek (X 40% - 60%): Bieżące sprawy, zadania operacyjne.
+2. Oś pionowa Y (14% - 84%): Waga / wpływ kafelka:
+   - Im wyżej (Y blisko 84%), tym większy kafelek i większy wpływ na życie/karierę.
+   - Im niżej (Y blisko 14%), tym mniejsza waga.
+
+Gdy użytkownik pyta o kolejny kafelek lub gdy sugerujesz dodanie nowego kafelka (celu bądź rozproszenia):
+Zaproponuj konkretną nazwę oraz pozycję (X i Y).
+ZAKOŃCZ swoją wypowiedź znacznikiem:
+<SUGGESTED_TILE title="Nazwa kafelka" x="liczba" y="liczba">Krótkie uzasadnienie</SUGGESTED_TILE>
+Przykład:
+<SUGGESTED_TILE title="Walidacja z klientami" x="82" y="70">Kluczowy krok zwiększający szansę powodzenia projektu.</SUGGESTED_TILE>
+
+Styl wypowiedzi:
+- Zwięzły, konkretny, inspirujący, zorientowany na rezultaty (jak Gemini / ChatGPT).
+- Formatuj wypowiedzi czytelnie w Markdown (krótkie akapity, punktor).
+- Jeśli brak podanych kafelków, zaproponuj pierwszy kluczowy cel lub zbadaj nawyki użytkownika.
+"""
+
+def chat_with_ai_about_goals(messages: list, current_tiles: list = None, strategic_goals: list = None) -> str:
+    """
+    Prowadzi konwersację z AI na temat kafelków, osi 2D oraz celów strategicznych użytkownika.
+    """
+    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY and not settings.GEMINI_API_KEY:
+        return (
+            "Świetnie, że nad tym pracujesz! W oparciu o Twoje obecne kafelki, kluczowym kolejnym krokiem "
+            "powinno być skupienie się na walidacji i egzekucji.\n\n"
+            "Sugeruję dodanie kafelka o wysokim wpływie:\n"
+            "<SUGGESTED_TILE title=\"Walidacja z użytkownikami\" x=\"80\" y=\"72\">Kluczowy krok do przyspieszenia realizacji celów.</SUGGESTED_TILE>"
+        )
+
+    try:
+        client, model = get_ai_client_and_model("llm")
+        trimmed_history = messages[-10:]
+
+        system_content = GOALS_CHAT_SYSTEM_PROMPT
+
+        if current_tiles:
+            tiles_desc = []
+            for t in current_tiles:
+                title = t.get("title", "")
+                x = t.get("x", 50)
+                y = t.get("y", 50)
+                zone = "Rozproszenie / brak realizacji" if x < 40 else ("Cel strategiczny" if x > 60 else "Zadanie bieżące")
+                weight = "Wysoka" if y > 60 else ("Niska" if y < 35 else "Średnia")
+                tiles_desc.append(f"- \"{title}\": pozycja X={x}% ({zone}), waga Y={y}% ({weight})")
+            system_content += "\n\n[OBECNY UKŁAD KAFELKÓW NA OSI 2D]:\n" + "\n".join(tiles_desc)
+        else:
+            system_content += "\n\n[OBECNY UKŁAD KAFELKÓW NA OSI]: Brak kafelków na osi."
+
+        if strategic_goals:
+            system_content += "\n\n[ZAREJESTROWANE CELE STRATEGICZNE]:\n- " + "\n- ".join(strategic_goals)
+
+        chat_msgs = [{"role": "system", "content": system_content}]
+        for msg in trimmed_history:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            chat_msgs.append({"role": role, "content": content})
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=chat_msgs,
+            temperature=0.7,
+            max_tokens=600
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Błąd AI API w czacie celów: {e}")
+        return "Przepraszam, wystąpił problem z połączeniem z serwerem AI. Spróbuj ponownie za chwilę."

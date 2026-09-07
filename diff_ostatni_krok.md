@@ -1,30 +1,36 @@
-# Raport z wykonania zadania: Pełny i Trwały Zapis Kafelków Osi Celów (/goals)
+# Raport z wykonania zadania: Okno Czatu AI (Gemini Goal Coach) pod Osią Celów (/goals)
 
 ## Cel operacyjny
-Zapewnienie pełnej, trwałej i odpornej na odświeżenia / restarty / czyszczenie pamięci podręcznej synchronizacji stanu minimalistycznej przestrzeni 2D kafelków na osi celów strategicznych.
+Wdrożenie okna konwersacyjnego AI w stylu Gemini / ChatGPT umieszczonego bezpośrednio pod poziomą osią celów 2D. Użytkownik może rozmawiać z asystentem o swoich celach, prosić o propozycje kolejnych kafelków oraz jednym kliknięciem dodawać sugerowane przez AI kafelki na oś.
 
 ## Zmienione i Utworzone Pliki
 
-### Backend (FastAPI + Firestore)
+### Backend (FastAPI + AI Service)
 - **[MODIFY] `src/schemas.py`**:
-  - Dodano model Pydantic `AxisTileItem` (`id`, `title`, `x`, `y`).
-  - Dodano model `AxisTilesPayload` (`tiles: List[AxisTileItem]`).
-- **[MODIFY] `src/crud.py`**:
-  - Zaimplementowano operacje `get_axis_tiles` oraz `save_axis_tiles` w subkolekcji `users/{uid}/settings/axis_tiles` z pełną izolacją UID i timestampem `updated_at`.
+  - Dodano `GoalChatMessage` (`role`, `content`).
+  - Dodano `GoalChatRequest` (`messages`, `current_tiles`).
+  - Dodano `GoalChatResponse` (`response`).
+- **[MODIFY] `src/services/ai_service.py`**:
+  - Zaimplementowano funkcję `chat_with_ai_about_goals()` z systemowym promptem trenera celów (AI Goal & Focus Coach).
+  - Wzbogacono obsługę kluczy API o `GEMINI_API_KEY` (poprzez endpoint kompatybilności OpenAI z modelem `gemini-2.5-flash`), `OPENAI_API_KEY` (`gpt-4o-mini`) oraz `GROQ_API_KEY`.
+  - Wprowadzono znacznik `<SUGGESTED_TILE title="..." x="..." y="...">` do strukturyzowanych propozycji kafelków.
 - **[MODIFY] `src/routers/goals.py`**:
-  - Dodano dedykowane endpointy REST `GET /api/v1/goals/axis-tiles` oraz `PUT /api/v1/goals/axis-tiles` (umieszczone przed ścieżką parametryczną celu).
+  - Dodano endpoint `POST /api/v1/goals/ai-chat`.
 - **[MODIFY] `tests/test_goals.py`**:
-  - Dodano testy `test_axis_tiles_persistence` oraz `test_axis_tiles_user_isolation`.
+  - Dodano test integracyjny `test_goal_ai_chat()`.
 
 ### Frontend (React + TypeScript)
+- **[NEW] `frontend/src/components/GoalAIChat.tsx`**:
+  - Pływające okno czatu pod osią ze stylistyką Gemini/ChatGPT.
+  - Szybkie pigułki z pytaniami (np. „✨ Zaproponuj kolejny kafelek”, „⚖️ Jak zrównoważyć rozproszenia?”, „🚀 Następny krok w celach”).
+  - Rozwijana lista wiadomości z autoscrollem i wskaźnikiem generowania odpowiedzi.
+  - Parser i interaktywna karta sugerowanego kafelka z przyciskiem „+ Dodaj na oś”.
+  - Persystencja historii czatu w `localStorage`.
 - **[MODIFY] `frontend/src/services/api.ts`**:
-  - Zdefiniowano interfejs `AxisTile`.
-  - Dodano funkcje klienta HTTP `fetchAxisTiles()` oraz `saveAxisTiles()`.
+  - Dodano funkcję `chatAboutGoals(messages, currentTiles)`.
 - **[MODIFY] `frontend/src/pages/Goals.tsx`**:
-  - Wdrożono natychmiastowe ładowanie z `localStorage` (brak opóźnień renderowania).
-  - Wdrożono asynchroniczną synchronizację z Firestore na starcie (rekoncyliacja stanu).
-  - Dodano automatyczny zapis do bazy danych przy zakończeniu przeciągania (`pointerUp`), dodaniu kafelka, usunięciu kafelka oraz resecie.
-  - Dodano dyskretny, minimalistyczny wskaźnik statusu zapisu („Zapisano” / „Zapisywanie...”) z możliwością ręcznego wywołania synchronizacji.
+  - Zintegrowano komponent `GoalAIChat` bezpośrednio pod osią poziomą.
+  - Podłączono callback `handleAddTileDirect` do natychmiastowego umieszczania sugerowanych przez AI kafelków na osi 2D oraz synchronizacji z bazą danych i pamięcią lokalną.
 
 ## Wyniki Testów i Kompilacji
 
@@ -32,13 +38,13 @@ Zapewnienie pełnej, trwałej i odpornej na odświeżenia / restarty / czyszczen
 ```text
 tests/test_auth.py ...                                                   [  7%]
 tests/test_cors.py ...                                                   [ 15%]
-tests/test_goals.py .......                                              [ 34%]
+tests/test_goals.py ........                                             [ 35%]
 tests/test_notes.py ................                                     [ 76%]
-tests/test_plans.py ....                                                 [ 86%]
+tests/test_plans.py ....                                                 [ 87%]
 tests/test_projects.py ...                                               [ 94%]
 tests/test_teams.py ..                                                   [100%]
 
-======================== 38 passed, 4 warnings in 5.68s ========================
+======================== 39 passed, 4 warnings in 7.07s ========================
 ```
 
 ### 2. Kompilacja Frontendu (TypeScript + Vite)
@@ -46,5 +52,5 @@ tests/test_teams.py ..                                                   [100%]
 > frontend@0.0.0 build
 > tsc -b && vite build
 
-✓ built in 738ms
+✓ built in 678ms
 ```

@@ -2,10 +2,30 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from src.auth import verify_token
 from src.database import get_db
-from src.schemas import GoalCreate, GoalUpdate, GoalResponse, AxisTileItem, AxisTilesPayload
+from src.schemas import GoalCreate, GoalUpdate, GoalResponse, AxisTileItem, AxisTilesPayload, GoalChatRequest, GoalChatResponse
 from src import crud
+from src.services.ai_service import chat_with_ai_about_goals
 
 router = APIRouter(prefix="/api/v1/goals", tags=["goals"])
+
+@router.post("/ai-chat", response_model=GoalChatResponse)
+def goal_ai_chat(
+    request: GoalChatRequest,
+    current_user: dict = Depends(verify_token),
+    db=Depends(get_db)
+):
+    """
+    Prowadzi konwersację z doradcą AI na temat kafelków osi 2D, kolejnych kroków i realizacji celów.
+    """
+    uid = current_user["uid"]
+    goals = crud.get_goals(db, uid)
+    strategic_titles = [g.get("title") for g in goals if g.get("title")]
+    reply = chat_with_ai_about_goals(
+        messages=[m.model_dump() for m in request.messages],
+        current_tiles=[t.model_dump() for t in request.current_tiles] if request.current_tiles else None,
+        strategic_goals=strategic_titles
+    )
+    return GoalChatResponse(response=reply)
 
 @router.get("/axis-tiles", response_model=List[AxisTileItem])
 def read_axis_tiles(

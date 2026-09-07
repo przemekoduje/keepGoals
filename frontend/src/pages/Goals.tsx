@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, X, RotateCcw, Cloud, Check } from "lucide-react";
 import { fetchAxisTiles, saveAxisTiles, type AxisTile } from "../services/api";
+import { GoalAIChat } from "../components/GoalAIChat";
 
 const DEFAULT_TILES: AxisTile[] = [
   { id: "tile-1", title: "Social media & TV", x: 15, y: 78 },
@@ -156,6 +157,20 @@ export const Goals: React.FC = () => {
     syncToCloud(updated);
   };
 
+  const handleAddTileDirect = useCallback((title: string, x: number, y: number) => {
+    const newTile: AxisTile = {
+      id: `tile-${Date.now()}`,
+      title: title.trim(),
+      x: Math.max(8, Math.min(92, Math.round(x * 10) / 10)),
+      y: Math.max(14, Math.min(84, Math.round(y * 10) / 10)),
+    };
+    setTiles((prev) => {
+      const updated = [...prev, newTile];
+      syncToCloud(updated);
+      return updated;
+    });
+  }, [syncToCloud]);
+
   const handleDeleteTile = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const updated = tiles.filter((t) => t.id !== id);
@@ -198,12 +213,12 @@ export const Goals: React.FC = () => {
 
   return (
     <div
-      className="w-full h-[calc(100vh-4rem)] flex flex-col justify-between px-6 sm:px-10 py-4 select-none"
+      className="w-full min-h-[calc(100vh-4rem)] flex flex-col justify-between px-4 sm:px-8 py-3 select-none"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
       {/* Pasek kontrolny z minimalistycznym wskaźnikiem zapisu */}
-      <div className="flex items-center justify-end space-x-3 w-full">
+      <div className="flex items-center justify-end space-x-3 w-full shrink-0 mb-1">
         {/* Dyskretny status zapisu */}
         <div
           onClick={() => syncToCloud(tiles)}
@@ -247,10 +262,10 @@ export const Goals: React.FC = () => {
       {/* PRZESTRZEŃ OSI - PEŁNA SZEROKOŚĆ */}
       <div
         ref={canvasRef}
-        className="relative flex-1 w-full touch-none my-2"
+        className="relative flex-1 w-full touch-none min-h-[340px] my-1"
       >
         {/* POZIOMA LINIA OSI */}
-        <div className="absolute bottom-12 left-4 right-4 sm:left-8 sm:right-8 h-2.5 rounded-full bg-gradient-to-r from-rose-300 via-slate-200 to-emerald-300 dark:from-rose-900/60 dark:via-slate-800 dark:to-emerald-900/60 shadow-inner">
+        <div className="absolute bottom-6 left-4 right-4 sm:left-8 sm:right-8 h-2.5 rounded-full bg-gradient-to-r from-rose-300 via-slate-200 to-emerald-300 dark:from-rose-900/60 dark:via-slate-800 dark:to-emerald-900/60 shadow-inner">
           <div className="absolute -left-1 -bottom-6 text-[11px] font-semibold text-rose-500 pointer-events-none whitespace-nowrap">
             Brak realizacji
           </div>
@@ -274,7 +289,7 @@ export const Goals: React.FC = () => {
               <div
                 style={{
                   left: `${tile.x}%`,
-                  bottom: "48px",
+                  bottom: "24px",
                   height: `calc(${tile.y}% - 14px)`,
                 }}
                 className={`absolute w-px border-l border-dashed pointer-events-none transition-all duration-75 ${
@@ -286,7 +301,7 @@ export const Goals: React.FC = () => {
 
               {/* Kropka na osi */}
               <div
-                style={{ left: `${tile.x}%`, bottom: "48px" }}
+                style={{ left: `${tile.x}%`, bottom: "24px" }}
                 className={`absolute -translate-x-1/2 translate-y-1/2 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-900 pointer-events-none transition-transform ${pinColor} ${
                   isDragging ? "scale-150" : ""
                 }`}
@@ -323,7 +338,13 @@ export const Goals: React.FC = () => {
         })}
       </div>
 
-      <div className="h-4" />
+      {/* SEKCJA CZATU AI POD LINIĄ POZIOMĄ */}
+      <div className="w-full shrink-0 mt-3 pt-2">
+        <GoalAIChat
+          currentTiles={tiles}
+          onAddTile={handleAddTileDirect}
+        />
+      </div>
 
       {/* MINIMALISTYCZNY MODAL DODAWANIA */}
       {isModalOpen && (
@@ -333,7 +354,7 @@ export const Goals: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-800 dark:white">
+              <span className="text-xs font-bold text-slate-800 dark:text-white">
                 Nowy kafelek
               </span>
               <button

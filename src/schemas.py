@@ -232,3 +232,14 @@ class AxisTileItem(BaseModel):
 
 class AxisTilesPayload(BaseModel):
     tiles: List[AxisTileItem] = Field(default=[], description="Lista kafelków na osi")
+
+class GoalChatMessage(BaseModel):
+    role: str = Field(..., description="user lub assistant")
+    content: str = Field(..., description="Treść wiadomości")
+
+class GoalChatRequest(BaseModel):
+    messages: List[GoalChatMessage] = Field(..., description="Historia konwersacji")
+    current_tiles: Optional[List[AxisTileItem]] = Field(default=[], description="Obecne kafelki na osi")
+
+class GoalChatResponse(BaseModel):
+    response: str = Field(..., description="Odpowiedź doradcy AI")

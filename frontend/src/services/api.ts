@@ -746,3 +746,19 @@ export async function saveAxisTiles(tiles: AxisTile[]): Promise<AxisTile[]> {
   return response.json();
 }
 
+export async function chatAboutGoals(messages: ChatMessage[], currentTiles?: AxisTile[]): Promise<{ response: string }> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/goals/ai-chat`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      messages,
+      current_tiles: currentTiles || []
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd komunikacji z AI dla celów: ${response.status}`);
+  }
+  return response.json();
+}
+
