@@ -243,3 +243,6 @@ class GoalChatRequest(BaseModel):
 
 class GoalChatResponse(BaseModel):
     response: str = Field(..., description="Odpowiedź doradcy AI")
+
+class SuggestTilesResponse(BaseModel):
+    suggestions: List[str] = Field(default=[], description="Lista wygenerowanych przez AI tytułów kafelków do moodboarda")

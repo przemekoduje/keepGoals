@@ -2,11 +2,31 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from src.auth import verify_token
 from src.database import get_db
-from src.schemas import GoalCreate, GoalUpdate, GoalResponse, AxisTileItem, AxisTilesPayload, GoalChatRequest, GoalChatResponse
+from src.schemas import GoalCreate, GoalUpdate, GoalResponse, AxisTileItem, AxisTilesPayload, GoalChatRequest, GoalChatResponse, SuggestTilesResponse
 from src import crud
-from src.services.ai_service import chat_with_ai_about_goals
+from src.services.ai_service import chat_with_ai_about_goals, suggest_tiles_for_goal
 
 router = APIRouter(prefix="/api/v1/goals", tags=["goals"])
+
+@router.post("/{goal_id}/suggest-tiles", response_model=SuggestTilesResponse)
+def get_suggested_tiles_for_goal(
+    goal_id: str,
+    current_user: dict = Depends(verify_token),
+    db=Depends(get_db)
+):
+    """
+    Generuje sugestie kafelków dla podanego celu wykorzystując AI.
+    """
+    uid = current_user["uid"]
+    goal = crud.get_goal(db, uid, goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Cel strategiczny nie został znaleziony")
+    
+    title = goal.get("title", "")
+    description = goal.get("description", "")
+    
+    suggestions = suggest_tiles_for_goal(title, description)
+    return SuggestTilesResponse(suggestions=suggestions)
 
 @router.post("/ai-chat", response_model=GoalChatResponse)
 def goal_ai_chat(

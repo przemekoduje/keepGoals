@@ -596,3 +596,63 @@ def chat_with_ai_about_goals(messages: list, current_tiles: list = None, strateg
     except Exception as e:
         print(f"Błąd AI API w czacie celów: {e}")
         return "Przepraszam, wystąpił problem z połączeniem z serwerem AI. Spróbuj ponownie za chwilę."
+
+def suggest_tiles_for_goal(title: str, description: str) -> list[str]:
+    """
+    Generuje sugestie kafelków do osi 2D na podstawie tytułu i opisu celu.
+    Zwraca listę stringów (nazw kafelków).
+    """
+    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY and not settings.GEMINI_API_KEY:
+        return [
+            "Walidacja rynkowa",
+            "Prototyp (MVP)",
+            "Badanie nawyków",
+            "Eliminacja rozpraszaczy",
+            "Bloki pracy głębokiej"
+        ]
+
+    try:
+        client, model = get_ai_client_and_model("llm")
+        prompt = f"""Jesteś doradcą ds. celów i produktywności.
+Użytkownik utworzył nowy cel strategiczny:
+Tytuł: {title}
+Opis: {description}
+
+Zaproponuj 5 do 7 konkretnych, zwięzłych kafelków (krótkie nazwy, max 3-4 słowa), które użytkownik mógłby umieścić na swojej wizualnej tablicy priorytetów. 
+Kafelki powinny stanowić mieszankę:
+- kluczowych zadań lub kamieni milowych wspierających cel
+- potencjalnych rozpraszaczy, których należy unikać (tzw. antywzorce dla tego celu)
+- kluczowych nawyków do zbudowania
+
+Odpowiedz WYŁĄCZNIE jako czysta tablica JSON w formacie:
+["Nazwa 1", "Nazwa 2", "Nazwa 3"]
+Nie dodawaj żadnych innych tekstów ani tagów markdown."""
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        response_text = response.choices[0].message.content.strip()
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+            
+        import json
+        result = json.loads(response_text.strip())
+        if isinstance(result, list):
+            return result
+        return []
+    except Exception as e:
+        print(f"Błąd AI API w suggest_tiles_for_goal: {e}")
+        return [
+            "Pierwszy kamień milowy",
+            "Kluczowy nawyk",
+            "Eliminacja dystrakcji",
+            "Analiza postępów"
+        ]

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, X, RotateCcw, Cloud, Check, ArrowLeft } from "lucide-react";
-import { fetchAxisTiles, saveAxisTiles, type AxisTile, type Goal } from "../services/api";
+import { fetchAxisTiles, saveAxisTiles, fetchAiTileSuggestions, type AxisTile, type Goal } from "../services/api";
 import { GoalAIChat } from "./GoalAIChat";
 
 const DEFAULT_TILES: AxisTile[] = [
@@ -39,6 +39,10 @@ export const GoalDiagram: React.FC<GoalDiagramProps> = ({ goal, onBack }) => {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
+  const [isSuggestionsPanelOpen, setIsSuggestionsPanelOpen] = useState(false);
 
   const syncToCloud = useCallback(async (tilesToSave: AxisTile[]) => {
     try {
@@ -81,6 +85,33 @@ export const GoalDiagram: React.FC<GoalDiagramProps> = ({ goal, onBack }) => {
       isMounted = false;
     };
   }, [goal.id, syncToCloud, STORAGE_KEY]); // removed `tiles` from dependency to avoid loop
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadSuggestions() {
+      try {
+        setIsSuggestionsLoading(true);
+        const res = await fetchAiTileSuggestions(goal.id);
+        if (!isMounted) return;
+        
+        if (res.suggestions && res.suggestions.length > 0) {
+          // Filtrujemy sugestie, które są już na planszy (opcjonalnie)
+          setSuggestions(res.suggestions);
+          setIsSuggestionsPanelOpen(true);
+        }
+      } catch (err) {
+        console.warn("Nie udało się pobrać sugestii AI:", err);
+      } finally {
+        if (isMounted) setIsSuggestionsLoading(false);
+      }
+    }
+    // Pobieramy sugestie tylko przy wejściu (jeśli jest to nowa sesja analizy)
+    loadSuggestions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [goal.id]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tiles));
@@ -167,6 +198,26 @@ export const GoalDiagram: React.FC<GoalDiagramProps> = ({ goal, onBack }) => {
       return updated;
     });
   }, [syncToCloud]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const title = e.dataTransfer.getData("application/vnd.keepgoals.tile");
+    if (!title || !canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const clampedX = Math.max(8, Math.min(92, (relX / rect.width) * 100));
+
+    const relY = rect.bottom - e.clientY;
+    const clampedY = Math.max(14, Math.min(84, (relY / rect.height) * 100));
+
+    handleAddTileDirect(title, clampedX, clampedY);
+    setSuggestions((prev) => prev.filter((s) => s !== title));
+  };
 
   const handleDeleteTile = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -267,6 +318,8 @@ export const GoalDiagram: React.FC<GoalDiagramProps> = ({ goal, onBack }) => {
       <div
         ref={canvasRef}
         className="relative flex-1 w-full touch-none min-h-[340px] my-1"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
         <div className="absolute bottom-6 left-4 right-4 sm:left-8 sm:right-8 h-2.5 rounded-full bg-gradient-to-r from-rose-300 via-slate-200 to-emerald-300 dark:from-rose-900/60 dark:via-slate-800 dark:to-emerald-900/60 shadow-inner">
           <div className="absolute -left-1 -bottom-6 text-[11px] font-semibold text-rose-500 pointer-events-none whitespace-nowrap">
@@ -388,6 +441,54 @@ export const GoalDiagram: React.FC<GoalDiagramProps> = ({ goal, onBack }) => {
           </div>
         </div>
       )}
+
+      {/* Panel boczny z sugestiami AI */}
+      <div 
+        className={`fixed top-0 right-0 h-full w-64 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl transform transition-transform duration-500 z-40 flex flex-col ${isSuggestionsPanelOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        <div className="p-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0 mt-12 sm:mt-0">
+          <h3 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <span className="text-amber-500">✨</span> Sugestie AI
+          </h3>
+          <button 
+            onClick={() => setIsSuggestionsPanelOpen(false)} 
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        
+        <div className="p-4 flex-1 overflow-y-auto space-y-3">
+          {isSuggestionsLoading ? (
+            <div className="flex flex-col items-center justify-center space-y-3 py-6 text-amber-500/70">
+              <Cloud className="w-6 h-6 animate-pulse" />
+              <div className="text-xs font-medium text-center animate-pulse">Analizowanie celu...</div>
+            </div>
+          ) : suggestions.length === 0 ? (
+            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-6 px-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 border-dashed">
+              Brak nowych sugestii.<br/><span className="text-[10px] opacity-70">Wszystko dodane lub cel jest pusty.</span>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mb-3 px-1">Przeciągnij kafelek na planszę:</p>
+              {suggestions.map((suggestion, idx) => (
+                <div
+                  key={`${suggestion}-${idx}`}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("application/vnd.keepgoals.tile", suggestion);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
+                  className="group relative p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 cursor-grab active:cursor-grabbing hover:border-amber-400 dark:hover:border-amber-500 hover:shadow-md transition-all shadow-sm overflow-hidden"
+                >
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 pl-1">{suggestion}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

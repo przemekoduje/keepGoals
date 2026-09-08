@@ -762,3 +762,15 @@ export async function chatAboutGoals(messages: ChatMessage[], currentTiles?: Axi
   return response.json();
 }
 
+export async function fetchAiTileSuggestions(goalId: string): Promise<{ suggestions: string[] }> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/goals/${goalId}/suggest-tiles`, {
+    method: "POST",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd pobierania sugestii AI: ${response.status}`);
+  }
+  return response.json();
+}
+
