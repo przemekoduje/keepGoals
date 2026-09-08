@@ -721,9 +721,9 @@ export interface AxisTile {
   y: number;
 }
 
-export async function fetchAxisTiles(): Promise<AxisTile[]> {
+export async function fetchAxisTiles(goalId: string): Promise<AxisTile[]> {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${API_URL}/api/v1/goals/axis-tiles`, {
+  const response = await fetch(`${API_URL}/api/v1/goals/${goalId}/axis-tiles`, {
     method: "GET",
     headers,
   });
@@ -733,9 +733,9 @@ export async function fetchAxisTiles(): Promise<AxisTile[]> {
   return response.json();
 }
 
-export async function saveAxisTiles(tiles: AxisTile[]): Promise<AxisTile[]> {
+export async function saveAxisTiles(goalId: string, tiles: AxisTile[]): Promise<AxisTile[]> {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${API_URL}/api/v1/goals/axis-tiles`, {
+  const response = await fetch(`${API_URL}/api/v1/goals/${goalId}/axis-tiles`, {
     method: "PUT",
     headers,
     body: JSON.stringify({ tiles }),

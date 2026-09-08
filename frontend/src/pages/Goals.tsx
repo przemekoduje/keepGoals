@@ -1,399 +1,269 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, X, RotateCcw, Cloud, Check } from "lucide-react";
-import { fetchAxisTiles, saveAxisTiles, type AxisTile } from "../services/api";
-import { GoalAIChat } from "../components/GoalAIChat";
+import React, { useState, useEffect, useMemo } from "react";
+import { Plus, Target, Filter, ChevronDown, ChevronUp, Award, Calendar, Archive } from "lucide-react";
+import { GoalCard } from "../components/GoalCard";
+import { GoalModal } from "../components/GoalModal";
+import { GoalDiagram } from "../components/GoalDiagram";
+import { 
+  fetchGoals, 
+  createGoal, 
+  updateGoal, 
+  deleteGoal, 
+  type Goal, 
+  type Project, 
+  fetchProjects,
+  type GoalHorizon
+} from "../services/api";
 
-const DEFAULT_TILES: AxisTile[] = [
-  { id: "tile-1", title: "Social media & TV", x: 15, y: 78 },
-  { id: "tile-2", title: "Serial po pracy", x: 28, y: 42 },
-  { id: "tile-3", title: "Bieżące e-maile", x: 50, y: 22 },
-  { id: "tile-4", title: "Architektura", x: 75, y: 55 },
-  { id: "tile-5", title: "Wdrożenie projektu", x: 88, y: 82 },
-];
-
-const STORAGE_KEY = "keepgoals_ultra_minimal_axis_v5";
+type HorizonFilter = GoalHorizon | "all";
 
 export const Goals: React.FC = () => {
-  // 1. Natychmiastowe wczytanie z pamięci lokalnej (0 ms opóźnienia)
-  const [tiles, setTiles] = useState<AxisTile[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // fallback do DEFAULT_TILES
-    }
-    return DEFAULT_TILES;
-  });
-
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("saved");
-  const isLoadedFromBackendRef = useRef(false);
-
-  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  
+  // Filters and Archive
+  const [horizonFilter, setHorizonFilter] = useState<HorizonFilter>("all");
+  const [showArchive, setShowArchive] = useState(false);
 
-  // 2. Bezpieczny i trwały zapis do bazy danych w chmurze
-  const syncToCloud = useCallback(async (tilesToSave: AxisTile[]) => {
-    try {
-      setSaveStatus("saving");
-      await saveAxisTiles(tilesToSave);
-      setSaveStatus("saved");
-    } catch (err) {
-      console.warn("Błąd zapisu do chmury (zapis zachowany w localStorage):", err);
-      setSaveStatus("error");
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [gData, pData] = await Promise.all([
+          fetchGoals(),
+          fetchProjects()
+        ]);
+        setGoals(gData);
+        setProjects(pData);
+      } catch (err) {
+        console.error("Błąd podczas pobierania celów", err);
+      } finally {
+        setIsLoading(false);
+      }
     }
+    loadData();
   }, []);
 
-  // 3. Pobranie z chmury po zamontowaniu komponentu
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadTiles() {
-      try {
-        const remoteTiles = await fetchAxisTiles();
-        if (!isMounted) return;
-
-        if (remoteTiles && remoteTiles.length > 0) {
-          setTiles(remoteTiles);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteTiles));
-          setSaveStatus("saved");
-        } else {
-          // Jeśli baza w chmurze jest pusta, zainicjalizuj ją bieżącymi kafelkami
-          syncToCloud(tiles);
-        }
-      } catch (err) {
-        console.warn("Nie udało się pobrać kafelków z chmury, używam localStorage:", err);
-      } finally {
-        if (isMounted) {
-          isLoadedFromBackendRef.current = true;
-        }
+  const handleSaveGoal = async (data: any) => {
+    try {
+      if (editingGoal) {
+        const updated = await updateGoal(editingGoal.id, data);
+        setGoals(prev => prev.map(g => g.id === updated.id ? updated : g));
+        if (selectedGoal?.id === updated.id) setSelectedGoal(updated);
+      } else {
+        const created = await createGoal(data);
+        setGoals(prev => [created, ...prev]);
       }
-    }
-
-    loadTiles();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [syncToCloud]);
-
-  // 4. Natychmiastowy zapis do localStorage przy każdej zmianie
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tiles));
-  }, [tiles]);
-
-  // Obsługa pozycji podczas przeciągania kafelka
-  const updateTilePosition = useCallback(
-    (tileId: string, clientX: number, clientY: number) => {
-      if (!canvasRef.current) return;
-      const rect = canvasRef.current.getBoundingClientRect();
-
-      const relX = clientX - rect.left;
-      const clampedX = Math.max(8, Math.min(92, (relX / rect.width) * 100));
-
-      const relY = rect.bottom - clientY;
-      const clampedY = Math.max(14, Math.min(84, (relY / rect.height) * 100));
-
-      setTiles((prev) =>
-        prev.map((t) =>
-          t.id === tileId
-            ? {
-                ...t,
-                x: Math.round(clampedX * 10) / 10,
-                y: Math.round(clampedY * 10) / 10,
-              }
-            : t
-        )
-      );
-    },
-    []
-  );
-
-  const handlePointerDown = (tileId: string, e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setActiveDragId(tileId);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!activeDragId) return;
-    updateTilePosition(activeDragId, e.clientX, e.clientY);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (activeDragId) {
-      try {
-        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-      setActiveDragId(null);
-
-      // Po zakończeniu upuszczenia kafelka, natychmiast synchronizujemy z chmurą
-      syncToCloud(tiles);
+      setIsModalOpen(false);
+      setEditingGoal(null);
+    } catch (err) {
+      console.error(err);
+      alert("Wystąpił błąd podczas zapisywania celu.");
     }
   };
 
-  const handleAddTile = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
-
-    const newTile: AxisTile = {
-      id: `tile-${Date.now()}`,
-      title: newTitle.trim(),
-      x: 50,
-      y: 50,
-    };
-
-    const updated = [...tiles, newTile];
-    setTiles(updated);
-    setNewTitle("");
-    setIsModalOpen(false);
-    syncToCloud(updated);
-  };
-
-  const handleAddTileDirect = useCallback((title: string, x: number, y: number) => {
-    const newTile: AxisTile = {
-      id: `tile-${Date.now()}`,
-      title: title.trim(),
-      x: Math.max(8, Math.min(92, Math.round(x * 10) / 10)),
-      y: Math.max(14, Math.min(84, Math.round(y * 10) / 10)),
-    };
-    setTiles((prev) => {
-      const updated = [...prev, newTile];
-      syncToCloud(updated);
-      return updated;
-    });
-  }, [syncToCloud]);
-
-  const handleDeleteTile = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = tiles.filter((t) => t.id !== id);
-    setTiles(updated);
-    syncToCloud(updated);
-  };
-
-  const handleReset = () => {
-    setTiles(DEFAULT_TILES);
-    syncToCloud(DEFAULT_TILES);
-  };
-
-  const getTileMetrics = (x: number, y: number, isDragging: boolean) => {
-    // Normalizacja Y (14 do 84) na skalę powiększenia (0.8 do 1.45)
-    const normalizedY = (y - 14) / (84 - 14);
-    const scale = 0.8 + normalizedY * 0.65;
-
-    // Kolorystyka pastelowa
-    let colorClasses =
-      "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100";
-    let pinColor = "bg-slate-400";
-
-    if (x < 40) {
-      colorClasses =
-        "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/50 text-rose-900 dark:text-rose-200";
-      pinColor = "bg-rose-400";
-    } else if (x > 60) {
-      colorClasses =
-        "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/50 text-emerald-900 dark:text-emerald-200";
-      pinColor = "bg-emerald-400";
+  const handleDeleteGoal = async (goalId: string) => {
+    if (!window.confirm("Czy na pewno chcesz usunąć ten cel?")) return;
+    try {
+      await deleteGoal(goalId);
+      setGoals(prev => prev.filter(g => g.id !== goalId));
+      if (selectedGoal?.id === goalId) setSelectedGoal(null);
+    } catch (err) {
+      console.error(err);
     }
-
-    return {
-      scale,
-      colorClasses,
-      pinColor,
-      isDragging,
-    };
   };
+
+  const handleToggleComplete = async (goal: Goal) => {
+    try {
+      const updated = await updateGoal(goal.id, { is_completed: !goal.is_completed });
+      setGoals(prev => prev.map(g => g.id === updated.id ? updated : g));
+      if (selectedGoal?.id === updated.id) setSelectedGoal(updated);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const activeGoals = useMemo(() => {
+    return goals.filter(g => !g.is_completed && (horizonFilter === "all" || g.horizon === horizonFilter));
+  }, [goals, horizonFilter]);
+
+  const completedGoals = useMemo(() => {
+    return goals.filter(g => g.is_completed && (horizonFilter === "all" || g.horizon === horizonFilter));
+  }, [goals, horizonFilter]);
+
+  if (selectedGoal) {
+    return (
+      <GoalDiagram 
+        goal={selectedGoal} 
+        onBack={() => setSelectedGoal(null)} 
+      />
+    );
+  }
 
   return (
-    <div
-      className="w-full min-h-[calc(100vh-4rem)] flex flex-col justify-between px-4 sm:px-8 py-3 select-none"
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-    >
-      {/* Pasek kontrolny z minimalistycznym wskaźnikiem zapisu */}
-      <div className="flex items-center justify-end space-x-3 w-full shrink-0 mb-1">
-        {/* Dyskretny status zapisu */}
-        <div
-          onClick={() => syncToCloud(tiles)}
-          title="Kliknij, aby wymusić synchronizację w chmurze"
-          className="cursor-pointer flex items-center space-x-1 px-2 py-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-        >
-          {saveStatus === "saving" ? (
-            <>
-              <Cloud className="w-3.5 h-3.5 animate-pulse text-amber-500" />
-              <span className="text-[11px] font-medium text-amber-500">Zapisywanie...</span>
-            </>
-          ) : saveStatus === "error" ? (
-            <>
-              <Cloud className="w-3.5 h-3.5 text-rose-400" />
-              <span className="text-[11px] font-medium text-rose-400">Zapisano lokalnie</span>
-            </>
-          ) : (
-            <>
-              <Check className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">Zapisano</span>
-            </>
-          )}
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fadeIn">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Target className="w-6 h-6 text-indigo-500" />
+            Cele strategiczne
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Zarządzaj swoimi celami i przejdź do diagramu, aby rozbić je na mniejsze kroki
+          </p>
         </div>
-
         <button
-          onClick={handleReset}
-          className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-          title="Przywróć domyślne"
+          onClick={() => {
+            setEditingGoal(null);
+            setIsModalOpen(true);
+          }}
+          className="inline-flex items-center space-x-2 px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow-md shadow-amber-400/20 transition-all active:scale-95 text-sm"
         >
-          <RotateCcw className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center space-x-1 px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-semibold text-xs shadow-sm transition-transform active:scale-95"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Dodaj</span>
+          <Plus className="w-4 h-4" />
+          <span>Nowy cel</span>
         </button>
       </div>
 
-      {/* PRZESTRZEŃ OSI - PEŁNA SZEROKOŚĆ */}
-      <div
-        ref={canvasRef}
-        className="relative flex-1 w-full touch-none min-h-[340px] my-1"
-      >
-        {/* POZIOMA LINIA OSI */}
-        <div className="absolute bottom-6 left-4 right-4 sm:left-8 sm:right-8 h-2.5 rounded-full bg-gradient-to-r from-rose-300 via-slate-200 to-emerald-300 dark:from-rose-900/60 dark:via-slate-800 dark:to-emerald-900/60 shadow-inner">
-          <div className="absolute -left-1 -bottom-6 text-[11px] font-semibold text-rose-500 pointer-events-none whitespace-nowrap">
-            Brak realizacji
-          </div>
-          <div className="absolute -right-1 -bottom-6 text-[11px] font-semibold text-emerald-500 pointer-events-none whitespace-nowrap">
-            Cel
-          </div>
+      {/* Filtry horyzontów */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <div className="flex items-center space-x-2 mr-2 text-slate-500 dark:text-slate-400">
+          <Filter className="w-4 h-4" />
+          <span className="text-sm font-medium">Horyzont:</span>
         </div>
-
-        {/* KAFELKI NA PRZESTRZENI */}
-        {tiles.map((tile) => {
-          const isDragging = activeDragId === tile.id;
-          const { scale, colorClasses, pinColor } = getTileMetrics(
-            tile.x,
-            tile.y,
-            isDragging
-          );
-
-          return (
-            <React.Fragment key={tile.id}>
-              {/* Pionowa linia do osi */}
-              <div
-                style={{
-                  left: `${tile.x}%`,
-                  bottom: "24px",
-                  height: `calc(${tile.y}% - 14px)`,
-                }}
-                className={`absolute w-px border-l border-dashed pointer-events-none transition-all duration-75 ${
-                  isDragging
-                    ? "border-amber-400 opacity-80"
-                    : "border-slate-300 dark:border-slate-700 opacity-40"
-                }`}
-              />
-
-              {/* Kropka na osi */}
-              <div
-                style={{ left: `${tile.x}%`, bottom: "24px" }}
-                className={`absolute -translate-x-1/2 translate-y-1/2 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-900 pointer-events-none transition-transform ${pinColor} ${
-                  isDragging ? "scale-150" : ""
-                }`}
-              />
-
-              {/* KAFELEK */}
-              <div
-                style={{
-                  left: `${tile.x}%`,
-                  bottom: `${tile.y}%`,
-                  transform: `translate(-50%, 50%) scale(${scale})`,
-                  transformOrigin: "center center",
-                }}
-                onPointerDown={(e) => handlePointerDown(tile.id, e)}
-                className={`absolute select-none cursor-grab touch-none rounded-2xl border transition-shadow duration-150 ${colorClasses} ${
-                  isDragging
-                    ? "cursor-grabbing shadow-2xl ring-2 ring-amber-400 z-40"
-                    : "shadow-sm hover:shadow-md z-20"
-                } px-3.5 py-2.5 min-w-[120px] max-w-[200px] flex items-center justify-between gap-2`}
-              >
-                <span className="font-semibold text-xs leading-snug truncate">
-                  {tile.title}
-                </span>
-                <button
-                  onClick={(e) => handleDeleteTile(tile.id, e)}
-                  className="text-slate-400 hover:text-rose-500 transition-colors p-0.5"
-                  title="Usuń"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </div>
-            </React.Fragment>
-          );
-        })}
+        
+        <button
+          onClick={() => setHorizonFilter("all")}
+          className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+            horizonFilter === "all"
+              ? "bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900"
+              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/50"
+          }`}
+        >
+          Wszystkie
+        </button>
+        <button
+          onClick={() => setHorizonFilter("long_term")}
+          className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+            horizonFilter === "long_term"
+              ? "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60"
+              : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50 dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/50"
+          }`}
+        >
+          <Award className="w-3.5 h-3.5" />
+          <span>Roczne</span>
+        </button>
+        <button
+          onClick={() => setHorizonFilter("quarterly")}
+          className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+            horizonFilter === "quarterly"
+              ? "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800/60"
+              : "bg-white text-slate-600 border-slate-200 hover:bg-blue-50 dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/50"
+          }`}
+        >
+          <Target className="w-3.5 h-3.5" />
+          <span>Kwartalne</span>
+        </button>
+        <button
+          onClick={() => setHorizonFilter("monthly")}
+          className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+            horizonFilter === "monthly"
+              ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/60"
+              : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50 dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/50"
+          }`}
+        >
+          <Calendar className="w-3.5 h-3.5" />
+          <span>Miesięczne</span>
+        </button>
       </div>
 
-      {/* SEKCJA CZATU AI POD LINIĄ POZIOMĄ */}
-      <div className="w-full shrink-0 mt-3 pt-2">
-        <GoalAIChat
-          currentTiles={tiles}
-          onAddTile={handleAddTileDirect}
-        />
-      </div>
-
-      {/* MINIMALISTYCZNY MODAL DODAWANIA */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-fadeIn">
-          <div
-            className="w-full max-w-xs bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-xl border border-slate-200 dark:border-slate-800"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-800 dark:text-white">
-                Nowy kafelek
-              </span>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+      {isLoading ? (
+        <div className="text-center py-12 text-slate-500">Ładowanie celów...</div>
+      ) : goals.length === 0 ? (
+        <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700">
+          <Target className="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+          <h3 className="text-lg font-medium text-slate-900 dark:text-white">Brak celów</h3>
+          <p className="text-slate-500 mt-1">Dodaj swój pierwszy cel strategiczny, aby rozpocząć planowanie.</p>
+        </div>
+      ) : (
+        <>
+          {activeGoals.length === 0 && horizonFilter !== "all" && (
+            <div className="text-center py-8 text-slate-500">
+              Brak aktywnych celów dla wybranego horyzontu.
             </div>
-
-            <form onSubmit={handleAddTile} className="space-y-3">
-              <input
-                type="text"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Nazwa..."
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-                autoFocus
-              />
-
-              <div className="flex justify-end space-x-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                >
-                  Anuluj
-                </button>
-                <button
-                  type="submit"
-                  disabled={!newTitle.trim()}
-                  className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs disabled:opacity-50 transition-colors"
-                >
-                  Dodaj
-                </button>
+          )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
+            {activeGoals.map(goal => (
+              <div key={goal.id} className="flex flex-col gap-3 relative h-full">
+                <GoalCard 
+                  goal={goal} 
+                  projects={projects}
+                  onToggleComplete={handleToggleComplete}
+                  onEdit={(g) => { setEditingGoal(g); setIsModalOpen(true); }}
+                  onDelete={handleDeleteGoal}
+                  onClick={() => setSelectedGoal(goal)}
+                  onUpdateKeyResult={async (id, krs) => {
+                    try {
+                      const updated = await updateGoal(id, { key_results: krs });
+                      setGoals(prev => prev.map(g => g.id === id ? updated : g));
+                    } catch (e) {
+                      console.error(e);
+                    }
+                  }}
+                />
               </div>
-            </form>
+            ))}
           </div>
-        </div>
+
+          {/* Archiwum Sukcesów */}
+          {completedGoals.length > 0 && (
+            <div className="mt-8">
+              <button
+                onClick={() => setShowArchive(!showArchive)}
+                className="flex items-center space-x-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 font-semibold text-lg transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors">
+                  <Archive className="w-4 h-4" />
+                </div>
+                <span>Archiwum Sukcesów ({completedGoals.length})</span>
+                {showArchive ? (
+                  <ChevronUp className="w-5 h-5 opacity-60" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 opacity-60" />
+                )}
+              </button>
+
+              {showArchive && (
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-fadeIn">
+                  {completedGoals.map(goal => (
+                    <div key={goal.id} className="flex flex-col gap-3 relative h-full">
+                      <GoalCard 
+                        goal={goal} 
+                        projects={projects}
+                        onToggleComplete={handleToggleComplete}
+                        onEdit={(g) => { setEditingGoal(g); setIsModalOpen(true); }}
+                        onDelete={handleDeleteGoal}
+                        onClick={() => setSelectedGoal(goal)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {isModalOpen && (
+        <GoalModal
+          goal={editingGoal}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleSaveGoal}
+          projects={projects}
+        />
       )}
     </div>
   );

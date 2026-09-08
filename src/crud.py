@@ -554,18 +554,18 @@ def delete_goal(db, uid: str, goal_id: str) -> bool:
     doc_ref.delete()
     return True
 
-def get_axis_tiles_ref(db, uid: str):
-    return db.collection("users").document(uid).collection("settings").document("axis_tiles")
+def get_axis_tiles_ref(db, uid: str, goal_id: str):
+    return db.collection("users").document(uid).collection("goals").document(goal_id).collection("diagram").document("axis_tiles")
 
-def get_axis_tiles(db, uid: str) -> List[Dict[str, Any]]:
-    doc = get_axis_tiles_ref(db, uid).get()
+def get_axis_tiles(db, uid: str, goal_id: str) -> List[Dict[str, Any]]:
+    doc = get_axis_tiles_ref(db, uid, goal_id).get()
     if doc.exists:
         data = doc.to_dict()
         return data.get("tiles", [])
     return []
 
-def save_axis_tiles(db, uid: str, tiles: List[AxisTileItem]) -> List[Dict[str, Any]]:
-    doc_ref = get_axis_tiles_ref(db, uid)
+def save_axis_tiles(db, uid: str, goal_id: str, tiles: List[AxisTileItem]) -> List[Dict[str, Any]]:
+    doc_ref = get_axis_tiles_ref(db, uid, goal_id)
     tiles_data = [t.model_dump() for t in tiles]
     doc_ref.set({
         "tiles": tiles_data,

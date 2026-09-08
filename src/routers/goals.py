@@ -27,28 +27,30 @@ def goal_ai_chat(
     )
     return GoalChatResponse(response=reply)
 
-@router.get("/axis-tiles", response_model=List[AxisTileItem])
+@router.get("/{goal_id}/axis-tiles", response_model=List[AxisTileItem])
 def read_axis_tiles(
+    goal_id: str,
     current_user: dict = Depends(verify_token),
     db=Depends(get_db)
 ):
     """
-    Pobiera zapisane kafelki osi 2D zalogowanego użytkownika.
+    Pobiera zapisane kafelki osi 2D dla konkretnego celu.
     """
     uid = current_user["uid"]
-    return crud.get_axis_tiles(db, uid)
+    return crud.get_axis_tiles(db, uid, goal_id)
 
-@router.put("/axis-tiles", response_model=List[AxisTileItem])
+@router.put("/{goal_id}/axis-tiles", response_model=List[AxisTileItem])
 def update_axis_tiles(
+    goal_id: str,
     payload: AxisTilesPayload,
     current_user: dict = Depends(verify_token),
     db=Depends(get_db)
 ):
     """
-    Trwale zapisuje kafelki osi 2D zalogowanego użytkownika w bazie Firestore.
+    Trwale zapisuje kafelki osi 2D dla konkretnego celu.
     """
     uid = current_user["uid"]
-    return crud.save_axis_tiles(db, uid, payload.tiles)
+    return crud.save_axis_tiles(db, uid, goal_id, payload.tiles)
 
 @router.get("", response_model=List[GoalResponse])
 def read_goals(
