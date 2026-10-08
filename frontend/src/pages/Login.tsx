@@ -31,7 +31,8 @@ export const Login: React.FC = () => {
       if (err?.code === 'auth/configuration-not-found') {
         setError("Usługa Firebase Authentication nie jest jeszcze włączona. Aktywuj ją w konsoli Firebase (Build -> Authentication -> Rozpocznij).");
       } else if (err?.code === 'auth/unauthorized-domain') {
-        setError("Domena nie jest jeszcze autoryzowana w Firebase Auth (auth/unauthorized-domain). Odczekaj chwilę lub odśwież stronę.");
+        const host = window.location.hostname;
+        setError(`IP / domena (${host}) nie jest autoryzowana w Firebase Auth (auth/unauthorized-domain). Dodaj '${host}' w Firebase Console -> Authentication -> Settings -> Authorized domains.`);
       } else if (err?.code === 'auth/popup-closed-by-user') {
         setError("Okno logowania Google zostało zamknięte przed ukończeniem.");
       } else if (err?.code === 'auth/cancelled-popup-request') {

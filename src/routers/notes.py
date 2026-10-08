@@ -5,9 +5,9 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from src.auth import verify_token
 from src.database import get_db
-from src.schemas import NoteCreate, NoteUpdate, NoteResponse, NoteReorderRequest, AIChatRequest, SendEmailRequest
+from src.schemas import NoteCreate, NoteUpdate, NoteResponse, NoteReorderRequest, AIChatRequest, SendEmailRequest, LiveInspectRequest, LiveInspectResponse
 from src.crud import create_note, get_notes, get_note, update_note, delete_note, reorder_notes, get_trash_notes, restore_note, hard_delete_note, get_user_settings, get_notes_ref
-from src.services.ai_service import analyze_audio_note, analyze_video_note, chat_with_ai_about_note, generate_handoff_summary
+from src.services.ai_service import analyze_audio_note, analyze_video_note, chat_with_ai_about_note, generate_handoff_summary, analyze_live_inspection
 from src.services.storage_service import save_media_file_local, sync_media_to_cloud_bg, process_media_and_cloud_sync_bg
 from src.services.email_service import send_transcription_email
 from pydantic import BaseModel, Field
@@ -580,6 +580,19 @@ def get_public_note(share_token: str, db = Depends(get_db)):
         "ai_summary_for_delegate": data.get("ai_summary_for_delegate"),
         "created_at": data.get("created_at")
     }
+
+@router.post("/live-inspect", response_model=LiveInspectResponse)
+def live_inspect_endpoint(
+    req: LiveInspectRequest,
+    user: dict = Depends(verify_token)
+):
+    res = analyze_live_inspection(
+        frame_base64=req.frame_base64,
+        user_text=req.user_text,
+        history=req.history,
+        inspection_type=req.inspection_type
+    )
+    return res
 
 @public_router.post("/{share_token}/complete")
 def complete_public_note(share_token: str, db = Depends(get_db)):

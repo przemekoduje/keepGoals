@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import tempfile
 import subprocess
@@ -29,25 +30,30 @@ def get_groq_client() -> OpenAI:
 
 def get_ai_client_and_model(task_type: str = "llm") -> tuple[OpenAI, str]:
     """
-    Zwraca odpowiedniego klienta (Groq lub OpenAI) oraz nazwę modelu w zależności od konfiguracji.
-    task_type: "llm" lub "whisper"
+    Zwraca odpowiedniego klienta oraz nazwę modelu w zależności od konfiguracji.
+    Priorytet: Google Gemini -> OpenAI -> Groq.
     """
     if task_type == "whisper":
         if settings.GROQ_API_KEY:
             return get_groq_client(), "whisper-large-v3"
         elif settings.OPENAI_API_KEY:
             return get_openai_client(), "whisper-1"
-        else:
-            return get_openai_client(), "whisper-1"
-    else:
-        # Do zadań językowych (strukturyzacja notatki, plan, mentor) używamy gpt-4o-mini lub modeli Gemini / Groq
-        if settings.OPENAI_API_KEY:
-            return get_openai_client(), "gpt-4o-mini"
         elif settings.GEMINI_API_KEY:
             return OpenAI(
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 api_key=settings.GEMINI_API_KEY
-            ), "gemini-2.5-flash"
+            ), "gemini-flash-latest"
+        else:
+            return get_openai_client(), "whisper-1"
+    else:
+        # Do zadań językowych (strukturyzacja notatki, plan, mentor): Priorytet Gemini (gemini-flash-latest)
+        if settings.GEMINI_API_KEY:
+            return OpenAI(
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                api_key=settings.GEMINI_API_KEY
+            ), "gemini-flash-latest"
+        elif settings.OPENAI_API_KEY:
+            return get_openai_client(), "gpt-4o-mini"
         elif settings.GROQ_API_KEY:
             return get_groq_client(), "openai/gpt-oss-120b"
         else:
@@ -58,7 +64,7 @@ def generate_morning_plan(strategic_goals: list[str]) -> str:
     Generuje plan poranny w oparciu o listę celów strategicznych użytkownika.
     Zwraca checklistę w formacie Markdown.
     """
-    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
+    if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
         return """# Twój Plan Poranny (Demo AI)
 
 Oto zoptymalizowany plan dnia wspierający Twoje cele strategiczne:
@@ -84,11 +90,13 @@ Zwróć wyłącznie plan dnia jako listę zadań do wykonania w formacie Markdow
             model=model,
             messages=[
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            temperature=0.3,
+            max_tokens=400
         )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"Błąd OpenAI API: {e}. Fallback do demo planu.")
+        print(f"Błąd AI API: {e}. Fallback do demo planu.")
         return """# Twój Plan Poranny (Demo AI - Błąd Połączenia)
 
 Oto zoptymalizowany plan dnia wspierający Twoje cele strategiczne:
@@ -103,7 +111,7 @@ def generate_evening_reflection(reflection_data: dict, strategic_goals: list[str
     """
     Generuje wieczorną refleksję (mentor) analizując sukcesy i porażki dnia w odniesieniu do celów strategicznych.
     """
-    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
+    if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
         return """# Analiza Mentora (Demo AI)
 
 Przeanalizowałem Twój dzisiejszy dzień w odniesieniu do celów strategicznych. Oto moje spostrzeżenia:
@@ -145,7 +153,9 @@ Wygeneruj zwięzłe podsumowanie z konstruktywnymi wnioskami optymalizacyjnymi n
             model=model,
             messages=[
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            temperature=0.4,
+            max_tokens=500
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -256,8 +266,8 @@ def extract_audio_for_whisper(input_bytes: bytes, mime_type: str) -> str:
         return in_path
 
 def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
-    # Fallback jeśli API key nie jest skonfigurowane
-    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
+    # Fallback jeśli żaden klucz API nie jest skonfigurowany
+    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY and not settings.GEMINI_API_KEY:
         return {
             "title": "Transkrypcja (Demo)",
             "content": "To jest przykładowa transkrypcja wygenerowana ponieważ brakuje kluczy API w pliku .env.\n\n- [ ] Przeanalizuj to zadanie\n- [ ] Zaplanuj kolejne kroki"
@@ -656,3 +666,112 @@ Nie dodawaj żadnych innych tekstów ani tagów markdown."""
             "Eliminacja dystrakcji",
             "Analiza postępów"
         ]
+
+def analyze_live_inspection(frame_base64: str = None, user_text: str = None, history: list = None, inspection_type: str = "Nieruchomość") -> dict:
+    """
+    Analizuje klatkę wideo na żywo z kamery inspektora oraz jego wypowiedź głosową.
+    Zwraca odpowiedź rzeczoznawcy AI Gemini w czasie rzeczywistym.
+    """
+    if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
+        return {
+            "ai_response": "Tryb podglądu inspekcji (Demo). Wymagany klucz GEMINI_API_KEY.",
+            "has_issue": False,
+            "issue_title": None,
+            "issue_description": None,
+            "recommended_action": None
+        }
+
+    try:
+        client, model = get_ai_client_and_model("llm")
+        
+        system_prompt = """Jesteś asystentem i ekspertem rzeczoznawcą budowlanym podczas inspekcji technicznej na żywo.
+
+TRYBY PRACY I ZASADY KOMUNIKACJI GŁOSOWEJ:
+
+1. ZWYKŁE NASŁUCHIWANIE I REJESTRACJA DYKTOWANIA (SEKRETARZ INSPEKCJI):
+   - Gdy użytkownik po prostu opowiada/dyktuje swoje obserwacje i NIE zadaje konkretnego pytania, NIE oceniaj kadru bez poproszenia i NIE wygłaszaj zbędnych opinii.
+   - Zamiast tego potwierdź krótko głosem zanotowanie faktów (np. "Zanotowałem.", "Zapisano.", "Przyjęto.").
+
+2. EKSPERTYZA NA ŻĄDANIE / ODPOWIEDŹ NA PYTANIE (INŻYNIER RZECZOZNAWCA):
+   - Gdy użytkownik wyraźnie prosi o ekspertyzę (np. naciska przycisk "Ekspertyza AI") LUB zadaje bezpośrednie pytanie słowne (np. "Co o tym myślisz?", "Czy to pęknięcie jest groźne?", "Sprawdź ten kadr", "Oceń montaż"):
+     - NATYCHMIAST przeprowadź fachową, inżynieryjną analizę techniczną widocznego elementu.
+     - Posługuj się ścisłym słownictwem normatywnym (liniowe mostki cieplne, ugięcia konstrukcyjne, spękania skurczowe, odparzenia tynku, kapilarne podciąganie wilgoci, brak obróbki blacharskiej).
+     - Wypowiadaj się zwięźle (1-2 zdania) i konkretnie.
+
+3. BRAK ZBĘDNEJ GADKI:
+   - BEZWZGLĘDNY ZAKAZ zwrotów wstępnych i potwierdzeń technicznych typu: "Widok z kamery działa", "Dzień dobry", "Jestem gotowy", "Rozpoczynam analizę". Przechodź od razu do faktów.
+
+Zwróć wynik WYŁĄCZNIE jako czysty obiekt JSON:
+{
+  "ai_response": "Krótkie potwierdzenie ('Zanotowałem.') LUB pełna 1-2 zdaniowa ekspertyza fachowa do odczytania głosem",
+  "has_issue": true/false,
+  "issue_title": "Nazwa usterki / nieprawidłowości (jeśli wykryto w trybie ekspertyzy) lub null",
+  "issue_description": "Dokładny opis techniczny lub null",
+  "recommended_action": "Zalecenie ekspertyzy / naprawy lub null"
+}"""
+
+        content_parts = []
+        user_query = user_text.strip() if user_text else ""
+        prompt_text = f"{system_prompt}\n\nWypowiedź/Pytanie Inspektora: {user_query if user_query else '[Brak pytania słownego - przeanalizuj sam kadr pod kątem anomalii i wad]'}"
+        content_parts.append({"type": "text", "text": prompt_text})
+
+        if frame_base64:
+            clean_b64 = frame_base64
+            if "," in clean_b64:
+                clean_b64 = clean_b64.split(",")[1]
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{clean_b64}"
+                }
+            })
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": content_parts}],
+            temperature=0.2,
+            max_tokens=800
+        )
+
+        response_text = response.choices[0].message.content.strip()
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+        response_text = response_text.strip()
+
+        try:
+            parsed = json.loads(response_text, strict=False)
+            return parsed
+        except Exception as json_err:
+            print(f"JSON parsing warning ({json_err}), attempting regex extraction from: {response_text}")
+            ai_resp_match = re.search(r'"ai_response"\s*:\s*"(.*?)"(?=,\s*"|\s*})', response_text, re.DOTALL)
+            if not ai_resp_match:
+                ai_resp_match = re.search(r'"ai_response"\s*:\s*"([^"]*)', response_text, re.DOTALL)
+            ai_resp = ai_resp_match.group(1).strip() if ai_resp_match else ""
+            
+            title_match = re.search(r'"issue_title"\s*:\s*"(.*?)"(?=,\s*"|\s*})', response_text, re.DOTALL)
+            if not title_match:
+                title_match = re.search(r'"issue_title"\s*:\s*"([^"]*)', response_text, re.DOTALL)
+            issue_title = title_match.group(1).strip() if title_match and title_match.group(1) != 'null' else None
+            
+            has_issue = "true" in response_text.lower() or bool(issue_title)
+
+            return {
+                "ai_response": ai_resp,
+                "has_issue": has_issue,
+                "issue_title": issue_title,
+                "issue_description": None,
+                "recommended_action": None
+            }
+    except Exception as e:
+        print(f"Błąd Gemini Live Inspection: {e}")
+        return {
+            "ai_response": "",
+            "has_issue": False,
+            "issue_title": None,
+            "issue_description": None,
+            "recommended_action": None
+        }

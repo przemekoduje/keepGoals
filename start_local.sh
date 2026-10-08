@@ -20,14 +20,31 @@ if [ ! -d ".venv" ]; then
     .venv/bin/pip install -r requirements.txt
 fi
 
-.venv/bin/uvicorn src.main:app --reload --host 127.0.0.1 --port 8000 &
+.venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
-# 2. Frontend (Vite z obsługą Portalu, KeepGoals i Speakling)
-echo "⚛️  [2/2] Startowanie serwera Vite (port 5173)..."
+# 2. Speakling Backend (opcjonalnie, jeśli istnieje repozytorium AI-english_buddy)
+SPEAKLING_DIR="$DIR/../AI-english_buddy/backend"
+SPEAKLING_PID=""
+if [ -d "$SPEAKLING_DIR" ] && [ -f "$SPEAKLING_DIR/app.py" ]; then
+    echo "🗣️  [2/3] Startowanie backendu Speakling Flask (port 5001)..."
+    (
+        cd "$SPEAKLING_DIR"
+        if [ -d "venv" ]; then
+            PORT=5001 venv/bin/python app.py &
+        else
+            PORT=5001 python3 app.py &
+        fi
+    )
+    SPEAKLING_PID=$!
+fi
+
+# 3. Frontend (Vite z obsługą Portalu, KeepGoals i Speakling)
+echo "⚛️  [3/3] Startowanie serwera Vite (port 5173)..."
 cd "$DIR/frontend"
 
-npm run dev -- --host 127.0.0.1 --port 5173 &
+# Uruchamiamy na 0.0.0.0 (dostęp w sieci lokalnej z telefonu/tabletu)
+npm run dev -- --host 0.0.0.0 --port 5173 &
 FRONTEND_PID=$!
 
 cleanup() {
@@ -35,6 +52,9 @@ cleanup() {
     echo "🛑 Zatrzymywanie usług lokalnych..."
     kill "$BACKEND_PID" 2>/dev/null || true
     kill "$FRONTEND_PID" 2>/dev/null || true
+    if [ -n "$SPEAKLING_PID" ]; then
+        kill "$SPEAKLING_PID" 2>/dev/null || true
+    fi
     exit 0
 }
 
@@ -44,9 +64,9 @@ echo ""
 echo "=========================================================="
 echo "✨ Całe środowisko przemokoduje.com jest aktywne lokalnie!"
 echo "=========================================================="
-echo "👉 Strona główna portalu: http://localhost:5173/"
-echo "👉 Aplikacja KeepGoals:   http://localhost:5173/keepgoals/"
-echo "👉 Aplikacja Speakling:   http://localhost:5173/speakling"
+echo "👉 Strona główna portalu: https://localhost:5173/"
+echo "👉 Aplikacja KeepGoals:   https://localhost:5173/keepgoals/"
+echo "👉 Aplikacja Speakling:   https://localhost:5173/speakling"
 echo "👉 Dokumentacja API:      http://localhost:8000/docs"
 echo ""
 echo "💡 Wszelkie zmiany w kodzie frontendu i backendu odświeżają się na żywo (Hot-Reload)!"
@@ -56,7 +76,7 @@ echo "=========================================================="
 # Opcjonalnie otwórz przeglądarkę
 sleep 2
 if command -v open >/dev/null 2>&1; then
-    open "http://localhost:5173/"
+    open "https://localhost:5173/"
 fi
 
 wait

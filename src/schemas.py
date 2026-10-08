@@ -246,3 +246,16 @@ class GoalChatResponse(BaseModel):
 
 class SuggestTilesResponse(BaseModel):
     suggestions: List[str] = Field(default=[], description="Lista wygenerowanych przez AI tytułów kafelków do moodboarda")
+
+class LiveInspectRequest(BaseModel):
+    frame_base64: Optional[str] = Field(default=None, description="Klatka wideo z kamery na żywo w format Base64 (JPEG)")
+    user_text: Optional[str] = Field(default=None, description="Wypowiedź lub pytanie inspektora wypowiedziane na żywo")
+    history: Optional[List[dict]] = Field(default=[], description="Historia przebiegu inspekcji")
+    inspection_type: Optional[str] = Field(default="Nieruchomość", description="Typ inspekcji technicznej")
+
+class LiveInspectResponse(BaseModel):
+    ai_response: str = Field(..., description="Głosowa / tekstowa odpowiedź rzeczoznawcy Gemini AI")
+    has_issue: bool = Field(default=False, description="Czy wykryto usterkę technologiczną lub problem")
+    issue_title: Optional[str] = Field(default=None, description="Tytuł wykrytej usterki / problemu")
+    issue_description: Optional[str] = Field(default=None, description="Opis szczegółowy wykrytego problemu")
+    recommended_action: Optional[str] = Field(default=None, description="Rekomendowany krok naprawczy")

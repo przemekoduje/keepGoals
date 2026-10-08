@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -7,11 +8,21 @@ import path from 'node:path'
 export default defineConfig({
   base: '/keepgoals/',
   plugins: [
+    basicSsl(),
     react(),
     {
       name: 'serve-portal-and-speakling',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          // 0. Auto-przekierowanie 127.0.0.1 -> localhost (Firebase Auth nie dopuszcza 127.0.0.1)
+          const host = req.headers.host || ''
+          if (host.startsWith('127.0.0.1')) {
+            const proto = (req.socket as any)?.encrypted ? 'https' : 'http'
+            const targetHost = host.replace('127.0.0.1', 'localhost')
+            res.writeHead(302, { Location: `${proto}://${targetHost}${req.url || ''}` })
+            return res.end()
+          }
+
           const rawUrl = req.url || ''
           const url = rawUrl.split('?')[0]
 
@@ -58,12 +69,20 @@ export default defineConfig({
     host: true,
     allowedHosts: true,
     proxy: {
-      '/api': {
+      '/api/v1': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/api/health': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
       '/uploads': {
         target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:5001',
         changeOrigin: true,
       }
     }

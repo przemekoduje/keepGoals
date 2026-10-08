@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createNote, uploadAudio, uploadVideo } from "../services/api";
+import { GeminiLiveInspector } from "./GeminiLiveInspector";
 
 interface KeepInputBarProps {
   onSuccess: () => void;
@@ -18,6 +19,7 @@ interface ListItem {
 
 export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isLiveInspectorOpen, setIsLiveInspectorOpen] = useState(false);
   const [inputMode, setInputMode] = useState<InputMode>("text");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -573,14 +575,14 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId
               </svg>
             </button>
 
-            {/* Video Recorder Button - mobile only */}
+            {/* Video / Gemini Live Inspector Button */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                startRecording("video");
+                setIsLiveInspectorOpen(true);
               }}
-              className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors md:hidden"
-              title="Nagraj notatkę wideo"
+              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-full transition-colors"
+              title="Gemini Live • Inspekcja Wideo na żywo"
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
@@ -937,6 +939,13 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId
           </div>
         </div>
       )}
+
+      {/* Dedykowany tryb inspekcji na żywo Gemini Live */}
+      <GeminiLiveInspector
+        isOpen={isLiveInspectorOpen}
+        onClose={() => setIsLiveInspectorOpen(false)}
+        onReportCreated={onSuccess}
+      />
     </div>
   );
 };

@@ -774,3 +774,29 @@ export async function fetchAiTileSuggestions(goalId: string): Promise<{ suggesti
   return response.json();
 }
 
+export interface LiveInspectResponse {
+  ai_response: string;
+  has_issue: boolean;
+  issue_title?: string;
+  issue_description?: string;
+  recommended_action?: string;
+}
+
+export async function sendLiveInspectionFrame(data: {
+  frame_base64?: string;
+  user_text?: string;
+  history?: any[];
+  inspection_type?: string;
+}): Promise<LiveInspectResponse> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_URL}/api/v1/notes/live-inspect`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw new Error(`Błąd analizy Gemini Live: ${response.status}`);
+  }
+  return response.json();
+}
+

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { uploadAudio, uploadVideo } from '../services/api';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Video, Eye } from 'lucide-react';
+import { GeminiLiveInspector } from './GeminiLiveInspector';
 
 type MediaType = 'audio' | 'video';
 type RecordState = 'inactive' | 'recording' | 'paused' | 'uploading';
@@ -37,6 +38,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
 }) => {
   // ─── UI State ─────────────────────────────────────────────────────────────
   const [isOpen, setIsOpen]               = useState(false);
+  const [isLiveInspectorOpen, setIsLiveInspectorOpen] = useState(false);
   const [mode, setMode]                   = useState<MediaType>('audio');
   const [recordState, setRecordState]     = useState<RecordState>('inactive');
   const [recordingTime, setRecordingTime] = useState(0);
@@ -110,6 +112,13 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
   const initAudioWarmup = async () => {
     try {
       cleanupAudioWarmup();
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+          setError('Przeglądarka mobilna blokuje dostęp do mikrofonu przez HTTP. Użyj przycisku "Wybierz plik z telefonu" poniżej, aby nagrać głos aparatem/dyktafonem iOS.');
+        }
+        return;
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       audioStreamRef.current = stream;
@@ -322,11 +331,15 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
         timerRef.current = window.setInterval(() => setRecordingTime(prev => prev + 1), 1000);
 
       } catch (err: any) {
-        setError(
-          err.name === 'NotSupportedError'
-            ? 'Format nagrywania nie jest wspierany na Twoim urządzeniu.'
-            : 'Brak dostępu do mikrofonu/kamery.'
-        );
+        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+          setError('Przeglądarki mobilne (Safari/Chrome) wymagają połączenia HTTPS lub localhost do transmisji na żywo z kamery/mikrofonu. Kliknij "Wybierz plik z telefonu" poniżej, aby nagrać aparatem iOS!');
+        } else {
+          setError(
+            err.name === 'NotSupportedError'
+              ? 'Format nagrywania nie jest wspierany na Twoim urządzeniu.'
+              : 'Brak dostępu do mikrofonu/kamery.'
+          );
+        }
       }
     }
   };
@@ -556,20 +569,30 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
 
           {recordState === 'inactive' && (
             <div className="flex flex-col space-y-2">
+              <button
+                onClick={() => { setIsOpen(false); setIsLiveInspectorOpen(true); }}
+                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white rounded-xl text-xs font-extrabold shadow-md transition-all flex items-center justify-center space-x-2 active:scale-95"
+              >
+                <Eye className="w-4 h-4 text-emerald-200" />
+                <span>Gemini Live • Inspekcja Nieruchomości</span>
+              </button>
+
               <div className="flex space-x-2">
                 <button
                   onClick={() => { setMode('audio'); startRecording('audio'); }}
-                  className="flex-1 py-3 bg-[#D0D6B3] hover:bg-[#D0D6B3]/80 text-[#143109] rounded-xl text-sm font-bold transition-colors"
+                  className="flex-1 py-2.5 bg-[#D0D6B3] hover:bg-[#D0D6B3]/80 text-[#143109] rounded-xl text-xs font-bold transition-colors"
                 >
                   Głos
                 </button>
                 <button
                   onClick={() => { setMode('video'); startRecording('video'); }}
-                  className="flex-1 py-3 bg-[#AAAE7F] hover:bg-[#AAAE7F]/80 text-[#143109] rounded-xl text-sm font-bold transition-colors"
+                  className="flex-1 py-2.5 bg-[#AAAE7F] hover:bg-[#AAAE7F]/80 text-[#143109] rounded-xl text-xs font-bold transition-colors flex items-center justify-center space-x-1"
                 >
-                  Wideo
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Wideo</span>
                 </button>
               </div>
+
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full py-2.5 bg-[#EFEFEF] hover:bg-[#D0D6B3]/40 dark:bg-slate-700 dark:hover:bg-slate-600 text-[#143109] dark:text-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center space-x-2 border border-[#AAAE7F]/30"
@@ -600,6 +623,15 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
           )}
         </div>
       )}
+
+      {/* Dedykowany tryb inspekcji na żywo Gemini Live */}
+      <GeminiLiveInspector
+        isOpen={isLiveInspectorOpen}
+        onClose={() => setIsLiveInspectorOpen(false)}
+        onReportCreated={() => {
+          if (onUploadSuccess) onUploadSuccess();
+        }}
+      />
 
       {/* Przycisk aktywacji panelu (tylko gdy komponent nie jest sterowany z zewnątrz) */}
       {!isOpen && isOpenExternal === undefined && (
