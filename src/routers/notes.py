@@ -1,5 +1,7 @@
 import os
 import uuid
+import base64
+import urllib.request
 from datetime import datetime, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
@@ -40,13 +42,19 @@ async def upload_audio_note(
     media_type = file.content_type or "audio/webm"
     
     filepath, local_media_url = save_media_file_local(file_bytes, filename)
+    clean_mime = media_type.split(";")[0].strip() or "audio/webm"
+    initial_media_url = (
+        f"data:{clean_mime};base64,{base64.b64encode(file_bytes).decode('utf-8')}"
+        if len(file_bytes) <= 720 * 1024
+        else local_media_url
+    )
     
     note_in = NoteCreate(
         title="Nagranie Głosowe",
         content="Przetwarzanie transkrypcji AI w tle...",
         note_type="daily_morning",
-        media_url=local_media_url,
-        media_type=media_type,
+        media_url=initial_media_url,
+        media_type=clean_mime,
         processing_status="pending"
     )
     created_note = create_note(db, uid, note_in)
@@ -84,13 +92,19 @@ async def upload_video_note(
     media_type = file.content_type or "video/webm"
     
     filepath, local_media_url = save_media_file_local(file_bytes, filename)
+    clean_mime = media_type.split(";")[0].strip() or "video/webm"
+    initial_media_url = (
+        f"data:{clean_mime};base64,{base64.b64encode(file_bytes).decode('utf-8')}"
+        if len(file_bytes) <= 720 * 1024
+        else local_media_url
+    )
     
     note_in = NoteCreate(
         title="Nagranie Wideo",
         content="Przetwarzanie transkrypcji AI w tle...",
         note_type="daily_morning",
-        media_url=local_media_url,
-        media_type=media_type,
+        media_url=initial_media_url,
+        media_type=clean_mime,
         processing_status="pending"
     )
     created_note = create_note(db, uid, note_in)
@@ -142,6 +156,28 @@ async def reanalyze_note_endpoint(
             filename = os.path.basename(rel_path)
             with open(rel_path, "rb") as f:
                 file_bytes = f.read()
+    elif media_url and media_url.startswith("data:"):
+        try:
+            header, b64_data = media_url.split(",", 1)
+            if ":" in header and ";" in header:
+                content_type = header.split(":", 1)[1].split(";", 1)[0].strip()
+            file_bytes = base64.b64decode(b64_data)
+            ext = content_type.split("/")[-1] if "/" in content_type else ("mp4" if is_video else "webm")
+            filename = f"{note_id}_reanalyze.{ext}"
+            filepath, _ = save_media_file_local(file_bytes, filename)
+        except Exception as e:
+            print(f"[Reanalyze] Błąd dekodowania data URL: {e}")
+    elif media_url and media_url.startswith("http"):
+        try:
+            ext = "mp4" if is_video else "webm"
+            filename = f"{note_id}_reanalyze.{ext}"
+            os.makedirs("uploads", exist_ok=True)
+            filepath = os.path.join("uploads", filename)
+            urllib.request.urlretrieve(media_url, filepath)
+            with open(filepath, "rb") as f:
+                file_bytes = f.read()
+        except Exception as e:
+            print(f"[Reanalyze] Błąd pobierania pliku HTTP: {e}")
 
     # Oznacz status notatki jako pending
     updated_note = update_note(db, uid, note_id, NoteUpdate(processing_status="pending"))
@@ -167,7 +203,7 @@ async def reanalyze_note_endpoint(
         raw_transcript = note.get("raw_transcript") or note.get("content")
         if raw_transcript and len(raw_transcript) > 5:
             def reanalyze_text_bg():
-                from src.services.ai_service import get_ai_client_and_model, audio_system_prompt
+                from src.services.ai_service import _call_gemini_chat, audio_system_prompt
                 from src.crud import get_user_teams
                 import json
                 try:
@@ -190,15 +226,14 @@ async def reanalyze_note_endpoint(
                         context += f"Oto lista aktualnych członków zespołu użytkownika (adresy email lub identyfikatory): {', '.join(team_members)}.\n"
                         context += "Jeśli w nagraniu padają imiona (np. Ola, Marek) współpracowników, postaraj się dopasować je do tej listy i w 'suggested_assignees' zwróć ich dokładny adres z powyższej listy zamiast samego imienia. Jeśli kogoś nie ma na liście, zwróć jego imię.\n"
 
-                    llm_client, llm_model = get_ai_client_and_model("llm")
-                    response = llm_client.chat.completions.create(
-                        model=llm_model,
+                    res_text = _call_gemini_chat(
                         messages=[
                             {"role": "system", "content": audio_system_prompt + context},
                             {"role": "user", "content": f"Oto transkrypcja do ponownego sformatowania:\n\n{raw_transcript}"}
-                        ]
-                    )
-                    res_text = response.choices[0].message.content.strip()
+                        ],
+                        temperature=0.3,
+                        max_tokens=2048
+                    ).strip()
                     start_idx = res_text.find("{")
                     end_idx = res_text.rfind("}")
                     if start_idx != -1 and end_idx != -1:

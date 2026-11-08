@@ -1,5 +1,6 @@
 import os
 import base64
+import subprocess
 import firebase_admin
 from firebase_admin import storage
 from src.config import settings
@@ -18,62 +19,92 @@ def save_media_file_local(file_bytes: bytes, filename: str) -> tuple[str, str]:
 def sync_media_to_cloud_bg(note_id: str, uid: str, filepath: str, filename: str, content_type: str, db):
     """
     Zadanie wykonywane w tle (BackgroundTasks):
-    1. Wysyła plik multimedialny z dysku serwera do Firebase Storage Bucket.
-    2. W przypadku sukcesu otrzymuje trwały adres HTTPS (storage.googleapis.com).
-    3. W przypadku braku bucketu chmurowego (dla plików <= 900 KB) konwertuje plik na Data URL Base64.
-    4. Aktualizuje pole `media_url` notatki w chmurze Firestore.
+    1. Wysyła plik multimedialny z dysku serwera do Firebase Storage Bucket (jeśli skonfigurowany).
+    2. W przypadku braku bucketu chmurowego konwertuje plik na Data URL Base64 (z automatyczną kompresją ffmpeg dla większych plików).
+    3. Aktualizuje pole `media_url` notatki w chmurze Firestore.
     """
     if not os.path.exists(filepath):
         return
 
     cloud_url = None
+    updated_media_type = None
+    clean_mime = (content_type or "audio/webm").split(";")[0].strip()
 
-    # 1. Próba wrzucenia do Firebase Storage Bucket
-    bucket_candidates = []
-    if settings.FIREBASE_STORAGE_BUCKET:
-        bucket_candidates.append(settings.FIREBASE_STORAGE_BUCKET)
-    
-    # Domyślne nazwy bucketów Firebase dla projektu
-    bucket_candidates.extend([
-        "ai-buddy-app-471817.appspot.com",
-        "ai-buddy-app-471817.firebasestorage.app"
-    ])
+    # 0. Konwersja do uniwersalnego formatu (MP3 dla audio, MP4 dla wideo) kompatybilnego z Safari/iOS/Chrome
+    upload_path = filepath
+    upload_filename = filename
+    upload_mime = clean_mime
+    base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+    converted_tmp = None
 
-    if firebase_admin._apps:
-        for bucket_name in bucket_candidates:
-            if not bucket_name:
-                continue
+    try:
+        if clean_mime.startswith("audio") and not filename.endswith(".mp3"):
+            converted_tmp = filepath + ".universal.mp3"
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", filepath, "-vn", "-ac", "1", "-ar", "24000", "-acodec", "libmp3lame", "-ab", "64k", converted_tmp],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            )
+            if os.path.exists(converted_tmp):
+                upload_path = converted_tmp
+                upload_filename = f"{base_name}.mp3"
+                upload_mime = "audio/mp3"
+                updated_media_type = "audio/mp3"
+        elif clean_mime.startswith("video") and not filename.endswith(".mp4"):
+            converted_tmp = filepath + ".universal.mp4"
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", filepath,
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                    "-c:a", "aac", "-b:a", "64k", "-ac", "1",
+                    "-movflags", "+faststart", converted_tmp
+                ],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            )
+            if os.path.exists(converted_tmp):
+                upload_path = converted_tmp
+                upload_filename = f"{base_name}.mp4"
+                upload_mime = "video/mp4"
+                updated_media_type = "video/mp4"
+    except Exception as conv_err:
+        print(f"[Storage Sync BG] Ostrzeżenie konwersji uniwersalnej ({conv_err}), użycie oryginalnego pliku.")
+        converted_tmp = None
+
+    try:
+        # 1. Wrzucenie do Firebase Storage Bucket
+        bucket_name = settings.FIREBASE_STORAGE_BUCKET or "ai-buddy-app-471817.firebasestorage.app"
+        if bucket_name and firebase_admin._apps:
             try:
                 bucket = storage.bucket(bucket_name)
-                blob_path = f"uploads/{filename}"
+                blob_path = f"uploads/{upload_filename}"
                 blob = bucket.blob(blob_path)
-                blob.upload_from_filename(filepath, content_type=content_type)
+                blob.upload_from_filename(upload_path, content_type=upload_mime)
                 blob.make_public()
                 cloud_url = blob.public_url
-                print(f"[Storage Sync BG] Pomyślnie wysłano plik {filename} do Firebase Storage ({bucket_name}): {cloud_url}")
-                break
+                print(f"[Storage Sync BG] Pomyślnie wysłano plik {upload_filename} do Firebase Storage: {cloud_url}")
             except Exception as e:
-                # Wypróbuj kolejną opcję z listy kandydatów
-                continue
+                print(f"[Storage Sync BG] Pominięto Firebase Storage ({e}), użycie Data URL.")
 
-    # 2. Jeśli brak bucketu lub nie udało się połączyć -> użyj Data URL dla trwałości (dla plików <= 900 KB)
-    if not cloud_url:
-        try:
-            file_size = os.path.getsize(filepath)
-            if file_size <= 900 * 1024:
-                with open(filepath, "rb") as f:
+        # 2. Fallback do Data URL (gdyby Storage był niedostępny)
+        max_raw_bytes = 720 * 1024
+        if not cloud_url:
+            if os.path.exists(upload_path) and os.path.getsize(upload_path) <= max_raw_bytes:
+                with open(upload_path, "rb") as f:
                     file_bytes = f.read()
                 b64_str = base64.b64encode(file_bytes).decode("utf-8")
-                cloud_url = f"data:{content_type};base64,{b64_str}"
-                print(f"[Storage Sync BG] Przekonwertowano plik {filename} do Base64 Data URL.")
-        except Exception as e:
-            print(f"[Storage Sync BG] Błąd odczytu pliku do Data URL: {e}")
+                cloud_url = f"data:{upload_mime};base64,{b64_str}"
+                print(f"[Storage Sync BG] Przekonwertowano plik {upload_filename} do Base64 Data URL.")
+    finally:
+        if converted_tmp and os.path.exists(converted_tmp):
+            os.remove(converted_tmp)
 
     # 3. Zaktualizuj pole media_url notatki w bazie danych (Firestore / Mock DB)
     if cloud_url and db:
         try:
             doc_ref = db.collection("users").document(uid).collection("notes").document(note_id)
-            doc_ref.update({"media_url": cloud_url})
+            upd = {"media_url": cloud_url}
+            if updated_media_type:
+                upd["media_type"] = updated_media_type
+            doc_ref.update(upd)
             print(f"[Storage Sync BG] Zaktualizowano notatkę {note_id} o trwały media_url w bazie.")
         except Exception as e:
             print(f"[Storage Sync BG] Błąd aktualizacji notatki w bazie: {e}")

@@ -13,9 +13,7 @@ interface MediaRecorderBaseProps {
 }
 
 // ─── Stała konfiguracja ────────────────────────────────────────────────────
-const RING_BUFFER_MS = 2000;   // 2 s pre-recording
-const TIMESLICE_MS   = 100;    // granulacja chunk-ów MediaRecorder
-const MAX_RING_CHUNKS = Math.ceil(RING_BUFFER_MS / TIMESLICE_MS); // = 20
+const TIMESLICE_MS = 250; // granulacja chunk-ów MediaRecorder
 
 /** Wybiera najlepszy obsługiwany MIME type audio dla MediaRecorder */
 function bestAudioMime(): string {
@@ -53,13 +51,10 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
   const videoStreamRef    = useRef<MediaStream | null>(null);
   const videoRef          = useRef<HTMLVideoElement>(null);
 
-  // ─── Audio ring-buffer refs ───────────────────────────────────────────────
-  const audioRecorderRef      = useRef<MediaRecorder | null>(null);  // ciągły recorder
+  // ─── Audio recorder refs ──────────────────────────────────────────────────
+  const audioRecorderRef      = useRef<MediaRecorder | null>(null);
   const audioStreamRef        = useRef<MediaStream | null>(null);
-  const ringBufferRef         = useRef<Blob[]>([]);  // rolling 2-s bufor
-  const mainChunksRef         = useRef<Blob[]>([]);  // chunks po kliknięciu "Nagraj"
-  const preSnapshotRef        = useRef<Blob[]>([]);  // snapshot bufora w chwili naciśnięcia
-  const isCapturingRef        = useRef<boolean>(false);
+  const mainChunksRef         = useRef<Blob[]>([]);
 
   // ─── Audio level analysis refs ────────────────────────────────────────────
   const audioCtxRef     = useRef<AudioContext | null>(null);
@@ -109,7 +104,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
   // AUDIO WARMUP — MediaRecorder + AnalyserNode (bez ScriptProcessorNode)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const initAudioWarmup = async () => {
+  const initAudioWarmup = async (): Promise<MediaStream | null> => {
     try {
       cleanupAudioWarmup();
 
@@ -117,7 +112,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
         if (!window.isSecureContext && window.location.hostname !== 'localhost') {
           setError('Przeglądarka mobilna blokuje dostęp do mikrofonu przez HTTP. Użyj przycisku "Wybierz plik z telefonu" poniżej, aby nagrać głos aparatem/dyktafonem iOS.');
         }
-        return;
+        return null;
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -144,29 +139,10 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
         animFrameRef.current = requestAnimationFrame(tick);
       };
       animFrameRef.current = requestAnimationFrame(tick);
-
-      // Ciągły MediaRecorder → ring buffer
-      const mime = bestAudioMime();
-      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      audioRecorderRef.current = mr;
-
-      mr.ondataavailable = (e) => {
-        if (e.data.size === 0) return;
-        if (isCapturingRef.current) {
-          // Jesteśmy w trybie nagrywania → chunk do głównego bufora
-          mainChunksRef.current.push(e.data);
-        } else {
-          // Pre-recording → ring buffer (rolling window)
-          ringBufferRef.current.push(e.data);
-          while (ringBufferRef.current.length > MAX_RING_CHUNKS) {
-            ringBufferRef.current.shift();
-          }
-        }
-      };
-
-      mr.start(TIMESLICE_MS);
+      return stream;
     } catch (err) {
       console.error('initAudioWarmup failed:', err);
+      return null;
     }
   };
 
@@ -208,10 +184,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
     }
 
     // Wyczyść bufory
-    isCapturingRef.current = false;
-    ringBufferRef.current = [];
     mainChunksRef.current = [];
-    preSnapshotRef.current = [];
     setAudioLevel(0);
   };
 
@@ -235,27 +208,48 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
     setMode(targetMode);
 
     if (targetMode === 'audio') {
-      // Warmup 300 ms — w tym czasie ring buffer ma czas zebrać próbki
-      setIsWarmingUp(true);
-      setRecordState('recording');
-      setRecordingTime(0);
+      try {
+        setIsWarmingUp(true);
+        setRecordState('recording');
+        setRecordingTime(0);
 
-      if (warmupTimeoutRef.current) clearTimeout(warmupTimeoutRef.current);
-      warmupTimeoutRef.current = window.setTimeout(() => {
+        let stream = audioStreamRef.current;
+        const hasActiveTrack = stream?.getAudioTracks().some((t) => t.readyState === 'live');
+        if (!stream || !hasActiveTrack) {
+          stream = await initAudioWarmup();
+        }
+        if (!stream) {
+          throw new Error('Brak dostępu do mikrofonu.');
+        }
+
+        const mime = bestAudioMime();
+        let mr: MediaRecorder;
+        try {
+          mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 });
+        } catch {
+          mr = new MediaRecorder(stream);
+        }
+        audioRecorderRef.current = mr;
+        mainChunksRef.current = [];
+
+        mr.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            mainChunksRef.current.push(e.data);
+          }
+        };
+
+        mr.start(TIMESLICE_MS);
         setIsWarmingUp(false);
 
-        // Snapshot ring-buffera jako pre-recording
-        preSnapshotRef.current = [...ringBufferRef.current];
-        // Zeruj główny bufor i zacznij przechwytywanie
-        mainChunksRef.current = [];
-        isCapturingRef.current = true;
-
-        // Timer wyświetlający czas nagrania
         if (timerRef.current) clearInterval(timerRef.current);
         timerRef.current = window.setInterval(() => {
           setRecordingTime(prev => prev + 1);
         }, 1000);
-      }, 300);
+      } catch (err: any) {
+        setIsWarmingUp(false);
+        setRecordState('inactive');
+        setError(err?.message || 'Brak dostępu do mikrofonu.');
+      }
 
     } else {
       // ── Nagrywanie wideo (bez zmian) ──
@@ -358,7 +352,6 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
       const mimeType = audioRecorderRef.current?.mimeType || bestAudioMime() || 'audio/webm';
 
       // Zatrzymaj MediaRecorder i poczekaj na ostatni ondataavailable
-      // (isCapturingRef nadal true → ostatni chunk trafi do mainChunksRef)
       await new Promise<void>((resolve) => {
         const mr = audioRecorderRef.current;
         if (mr && mr.state !== 'inactive') {
@@ -369,11 +362,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
         }
       });
 
-      // Teraz wyłącz flagę przechwytywania
-      isCapturingRef.current = false;
-
-      // Złącz: [pre-recording 2s] + [główne nagranie]
-      const allBlobs = [...preSnapshotRef.current, ...mainChunksRef.current];
+      const allBlobs = [...mainChunksRef.current];
 
       if (allBlobs.length === 0) {
         setError('Nie udało się nagrać dźwięku. Sprawdź uprawnienia mikrofonu.');
@@ -489,7 +478,7 @@ export const MediaRecorderBase: React.FC<MediaRecorderBaseProps> = ({
                 <video
                   ref={(el) => {
                     videoRef.current = el;
-                    if (el && videoStreamRef.current) {
+                    if (el && videoStreamRef.current && el.srcObject !== videoStreamRef.current) {
                       el.srcObject = videoStreamRef.current;
                       el.play().catch(() => {});
                     }

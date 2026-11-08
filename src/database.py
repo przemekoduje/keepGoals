@@ -1,4 +1,6 @@
 import os
+import json
+import base64
 import uuid
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -74,6 +76,16 @@ def init_firebase():
         options = {}
         if settings.FIREBASE_STORAGE_BUCKET:
             options['storageBucket'] = settings.FIREBASE_STORAGE_BUCKET
+
+        cred_b64 = os.environ.get("FIREBASE_CREDENTIALS_B64", "")
+        if cred_b64:
+            try:
+                cred_dict = json.loads(base64.b64decode(cred_b64).decode("utf-8"))
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred, options if options else None)
+                return
+            except Exception as e:
+                print(f"Ostrzeżenie: Nie udało się zainicjalizować Firebase z FIREBASE_CREDENTIALS_B64: {e}")
 
         cred_path = settings.FIREBASE_CREDENTIALS_PATH
         if cred_path and os.path.exists(cred_path):

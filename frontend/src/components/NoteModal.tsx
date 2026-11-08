@@ -51,8 +51,13 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   projects = [],
 }) => {
   const { user } = useAuth();
-  const isAudio = note.media_type?.startsWith("audio/");
-  const isVideo = note.media_type?.startsWith("video/");
+  const isAudio = Boolean(note.media_type?.startsWith("audio") || note.media_url?.startsWith("data:audio"));
+  const isVideo = Boolean(note.media_type?.startsWith("video") || note.media_url?.startsWith("data:video"));
+  const resolvedMediaUrl = note.media_url
+    ? note.media_url.startsWith("data:") || note.media_url.startsWith("http")
+      ? note.media_url
+      : `${API_URL}${note.media_url}`
+    : "";
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const currentProjectIds = note.project_ids && note.project_ids.length > 0 
     ? note.project_ids 
@@ -80,6 +85,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   const modalRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const formattingBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setEditContent(note.content);
@@ -120,10 +126,14 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   // Click outside editor to exit edit mode
   useEffect(() => {
     const handleClickOutsideEditor = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (formattingBtnRef.current && formattingBtnRef.current.contains(target)) {
+        return;
+      }
       if (
         isEditing &&
         editorContainerRef.current &&
-        !editorContainerRef.current.contains(event.target as Node)
+        !editorContainerRef.current.contains(target)
       ) {
         setIsEditing(false);
         setShowFormattingBar(false);
@@ -289,24 +299,26 @@ export const NoteModal: React.FC<NoteModalProps> = ({
         className="relative bg-[#EFEFEF] dark:bg-[#202124] rounded-2xl shadow-2xl border border-[#AAAE7F]/40 w-full max-w-3xl flex flex-col max-h-[90vh] overflow-hidden"
       >
         {/* Media Player Header */}
-        {note.media_url && (
+        {resolvedMediaUrl && (
           <div className="w-full bg-black/5 dark:bg-black/20 flex items-center justify-center relative group">
             {isVideo && (
               <video 
                 controls 
-                autoPlay
+                playsInline
+                preload="metadata"
                 className="w-full max-h-[50vh] object-contain" 
-                src={`${API_URL}${note.media_url}`}
+                src={resolvedMediaUrl}
               >
                 Twoja przeglądarka nie obsługuje odtwarzacza wideo.
               </video>
             )}
-            {isAudio && (
-              <div className="w-full p-8 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
+            {(isAudio || !isVideo) && (
+              <div className="w-full p-6 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
                 <audio 
                   controls 
+                  preload="metadata"
                   className="w-full max-w-md outline-none" 
-                  src={`${API_URL}${note.media_url}`}
+                  src={resolvedMediaUrl}
                 >
                   Twoja przeglądarka nie obsługuje odtwarzacza audio.
                 </audio>
@@ -571,12 +583,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             </div>
           )}
 
-          <div 
-            className="prose prose-slate dark:prose-invert max-w-none min-h-[100px]"
-            onClick={() => {
-              if (!isEditing) setIsEditing(true);
-            }}
-          >
+          <div className="prose prose-slate dark:prose-invert max-w-none min-h-[100px]">
             {isEditing ? (
               <textarea
                 ref={textareaRef}
@@ -833,17 +840,26 @@ export const NoteModal: React.FC<NoteModalProps> = ({
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#143109] rounded-full border-2 border-white dark:border-[#202124]"></span>
             </button>
             <button 
+              ref={formattingBtnRef}
               type="button" 
               onClick={() => {
-                setIsEditing(true);
-                setShowFormattingBar(!showFormattingBar);
+                if (isEditing) {
+                  if (editContent !== note.content) {
+                    handleNoteContentChange(note.id, editContent);
+                  }
+                  setIsEditing(false);
+                  setShowFormattingBar(false);
+                } else {
+                  setIsEditing(true);
+                  setShowFormattingBar(true);
+                }
               }}
               className={`rounded-full p-2 transition-colors ${
-                showFormattingBar 
+                isEditing || showFormattingBar 
                   ? 'bg-[#D0D6B3] text-[#143109]' 
                   : 'hover:bg-[#D0D6B3]/40 text-[#143109] dark:text-slate-400'
               }`}
-              title="Opcje formatowania"
+              title="Opcje formatowania (Edytuj treść)"
             >
               <Baseline className="w-5 h-5" />
             </button>

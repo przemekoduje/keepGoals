@@ -791,7 +791,7 @@ export const KeepInputBar: React.FC<KeepInputBarProps> = ({ onSuccess, projectId
                   <video
                     ref={(el) => {
                       videoPreviewRef.current = el;
-                      if (el && streamRef.current) {
+                      if (el && streamRef.current && el.srcObject !== streamRef.current) {
                         el.srcObject = streamRef.current;
                         el.play().catch(() => {});
                       }

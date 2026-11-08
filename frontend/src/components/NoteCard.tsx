@@ -40,8 +40,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   projects = [],
   onClick,
 }) => {
-  const isAudio = note.media_type?.startsWith("audio/");
-  const isVideo = note.media_type?.startsWith("video/");
+  const isAudio = Boolean(note.media_type?.startsWith("audio") || note.media_url?.startsWith("data:audio"));
+  const isVideo = Boolean(note.media_type?.startsWith("video") || note.media_url?.startsWith("data:video"));
   const { user } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);

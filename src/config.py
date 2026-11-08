@@ -17,9 +17,8 @@ def get_local_ip():
 class Settings:
     FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
     FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET", "")
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or ""
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or ""
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY") or ""
+    GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip().strip('"').strip("'")
+    GEMINI_FALLBACK_API_KEY = (os.getenv("GEMINI_FALLBACK_API_KEY") or "").strip().strip('"').strip("'")
     
     _raw_smtp_host = os.getenv("SMTP_HOST") or os.getenv("EMAIL_HOST") or "smtp.gmail.com"
     SMTP_HOST = _raw_smtp_host.split("#")[0].strip()

@@ -5,66 +5,159 @@ import tempfile
 import subprocess
 import base64
 import urllib.request
+import urllib.error
 from openai import OpenAI
 from src.config import settings
 
-_client = None
-_groq_client = None
+_verified_gemini_key = None
 
-def get_openai_client() -> OpenAI:
-    global _client
-    if _client is None:
-        api_key = settings.OPENAI_API_KEY or None
-        _client = OpenAI(api_key=api_key)
-    return _client
+def get_candidate_gemini_keys() -> list[str]:
+    """
+    Zwraca listę kandydatów kluczy Google Gemini (główny klucz z .env oraz zapasowy z Cloud Run).
+    """
+    keys = []
+    if getattr(settings, "GEMINI_API_KEY", ""):
+        keys.append(settings.GEMINI_API_KEY.strip().strip('"').strip("'"))
+    if getattr(settings, "GEMINI_FALLBACK_API_KEY", ""):
+        fb = settings.GEMINI_FALLBACK_API_KEY.strip().strip('"').strip("'")
+        if fb and fb not in keys:
+            keys.append(fb)
+    return [k for k in keys if k]
 
-def get_groq_client() -> OpenAI:
-    global _groq_client
-    if _groq_client is None:
-        api_key = settings.GROQ_API_KEY or None
-        _groq_client = OpenAI(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=api_key
-        )
-    return _groq_client
+def get_active_gemini_key() -> str:
+    """
+    Zwraca zweryfikowany, działający klucz Google Gemini API.
+    """
+    global _verified_gemini_key
+    candidates = get_candidate_gemini_keys()
+    if not candidates:
+        return ""
+    if _verified_gemini_key and _verified_gemini_key in candidates:
+        return _verified_gemini_key
+    return candidates[0]
+
+def get_gemini_client(api_key: str = None) -> OpenAI:
+    key = api_key or get_active_gemini_key()
+    return OpenAI(
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        api_key=key or "missing-gemini-key"
+    )
 
 def get_ai_client_and_model(task_type: str = "llm") -> tuple[OpenAI, str]:
     """
-    Zwraca odpowiedniego klienta oraz nazwę modelu w zależności od konfiguracji.
-    Priorytet: Google Gemini -> OpenAI -> Groq.
+    Zwraca klienta Google Gemini oraz model (wyłączny silnik AI w projekcie KeepGoals).
     """
-    if task_type == "whisper":
-        if settings.GROQ_API_KEY:
-            return get_groq_client(), "whisper-large-v3"
-        elif settings.OPENAI_API_KEY:
-            return get_openai_client(), "whisper-1"
-        elif settings.GEMINI_API_KEY:
-            return OpenAI(
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                api_key=settings.GEMINI_API_KEY
-            ), "gemini-flash-latest"
-        else:
-            return get_openai_client(), "whisper-1"
-    else:
-        # Do zadań językowych (strukturyzacja notatki, plan, mentor): Priorytet Gemini (gemini-flash-latest)
-        if settings.GEMINI_API_KEY:
-            return OpenAI(
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                api_key=settings.GEMINI_API_KEY
-            ), "gemini-flash-latest"
-        elif settings.OPENAI_API_KEY:
-            return get_openai_client(), "gpt-4o-mini"
-        elif settings.GROQ_API_KEY:
-            return get_groq_client(), "openai/gpt-oss-120b"
-        else:
-            return get_openai_client(), "gpt-4o-mini"
+    return get_gemini_client(), "gemini-flash-lite-latest"
+
+def _call_gemini_chat(messages: list, temperature: float = 0.4, max_tokens: int = 2048) -> str:
+    """
+    Wywołuje model Google Gemini z automatycznym przełączeniem na klucz zapasowy w razie błędu 401/403
+    oraz fallbackiem między gemini-flash-lite-latest a gemini-flash-latest.
+    """
+    global _verified_gemini_key
+    candidates = get_candidate_gemini_keys()
+    if _verified_gemini_key and _verified_gemini_key in candidates:
+        candidates = [_verified_gemini_key] + [k for k in candidates if k != _verified_gemini_key]
+
+    last_err = None
+    for key in candidates:
+        client = get_gemini_client(key)
+        for model in ["gemini-flash-lite-latest", "gemini-flash-latest"]:
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                content = response.choices[0].message.content
+                if content:
+                    _verified_gemini_key = key
+                    return content
+            except Exception as e:
+                last_err = e
+                err_str = str(e)
+                if any(tok in err_str for tok in ["400", "401", "403", "UNAUTHENTICATED", "API key not valid", "ACCESS_TOKEN_TYPE_UNSUPPORTED"]):
+                    break
+                continue
+    if last_err:
+        raise last_err
+    raise RuntimeError("Brak skonfigurowanego klucza GEMINI_API_KEY.")
+
+def transcribe_audio_with_gemini(audio_path: str, mime_type: str = "audio/mp3") -> str:
+    """
+    Transkrybuje plik audio bezpośrednio za pomocą natywnego API Google Gemini (inline_data).
+    """
+    global _verified_gemini_key
+    with open(audio_path, "rb") as f:
+        audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    clean_mime = (mime_type or "audio/mp3").split(";")[0].strip().lower()
+    if not clean_mime or "/" not in clean_mime:
+        clean_mime = "audio/mp3"
+
+    candidates = get_candidate_gemini_keys()
+    if _verified_gemini_key and _verified_gemini_key in candidates:
+        candidates = [_verified_gemini_key] + [k for k in candidates if k != _verified_gemini_key]
+
+    transcribe_prompt = (
+        "Przetranskrybuj dokładnie wypowiedź z tego nagrania w oryginalnym języku (polskim). "
+        "Zwróć wyłącznie czysty tekst transkrypcji, bez żadnych komentarzy i bez formatowania. "
+        "Jeśli w nagraniu nie ma żadnej mowy (cisza lub szum), zwróć pusty ciąg znaków."
+    )
+
+    last_err = None
+    for key in candidates:
+        for g_model in ["gemini-flash-lite-latest", "gemini-flash-latest"]:
+            try:
+                parts = [
+                    {"inline_data": {"mime_type": clean_mime, "data": audio_b64}},
+                    {"text": transcribe_prompt}
+                ]
+                payload = {
+                    "contents": [{"parts": parts}],
+                    "generationConfig": {"temperature": 0.0}
+                }
+
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={key}"
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                text_chunks = []
+                for cand in data.get("candidates", [])[:1]:
+                    for part in (cand.get("content") or {}).get("parts", []):
+                        chunk = part.get("text") or (part.get("audioTranscription") or {}).get("text") or ""
+                        if chunk:
+                            text_chunks.append(chunk)
+                _verified_gemini_key = key
+                return " ".join(text_chunks).strip()
+            except urllib.error.HTTPError as e:
+                err_body = ""
+                try:
+                    err_body = e.read().decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+                last_err = RuntimeError(f"Gemini HTTP {e.code}: {err_body or e.reason}")
+                if e.code in (401, 403) or any(tok in err_body for tok in ["API key not valid", "API_KEY_INVALID", "ACCESS_TOKEN_TYPE_UNSUPPORTED", "UNAUTHENTICATED"]):
+                    break
+                continue
+            except Exception as e:
+                last_err = e
+                continue
+    if last_err:
+        raise last_err
+    return ""
 
 def generate_morning_plan(strategic_goals: list[str]) -> str:
     """
     Generuje plan poranny w oparciu o listę celów strategicznych użytkownika.
     Zwraca checklistę w formacie Markdown.
     """
-    if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
+    if not get_candidate_gemini_keys():
         return """# Twój Plan Poranny (Demo AI)
 
 Oto zoptymalizowany plan dnia wspierający Twoje cele strategiczne:
@@ -76,7 +169,6 @@ Oto zoptymalizowany plan dnia wspierający Twoje cele strategiczne:
 """
 
     try:
-        client, model = get_ai_client_and_model("llm")
         goals_formatted = "\n".join([f"- {goal}" for goal in strategic_goals])
         
         prompt = f"""Jesteś osobistym asystentem produktywności.
@@ -86,17 +178,13 @@ Plan musi bezpośrednio wspierać realizację poniższych celów strategicznych 
 
 Zwróć wyłącznie plan dnia jako listę zadań do wykonania w formacie Markdown, bez żadnych wstępów, podsumowań czy komentarzy."""
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+        return _call_gemini_chat(
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=400
+            max_tokens=1500
         )
-        return response.choices[0].message.content
     except Exception as e:
-        print(f"Błąd AI API: {e}. Fallback do demo planu.")
+        print(f"Błąd Gemini API: {e}. Fallback do demo planu.")
         return """# Twój Plan Poranny (Demo AI - Błąd Połączenia)
 
 Oto zoptymalizowany plan dnia wspierający Twoje cele strategiczne:
@@ -111,7 +199,7 @@ def generate_evening_reflection(reflection_data: dict, strategic_goals: list[str
     """
     Generuje wieczorną refleksję (mentor) analizując sukcesy i porażki dnia w odniesieniu do celów strategicznych.
     """
-    if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
+    if not get_candidate_gemini_keys():
         return """# Analiza Mentora (Demo AI)
 
 Przeanalizowałem Twój dzisiejszy dzień w odniesieniu do celów strategicznych. Oto moje spostrzeżenia:
@@ -126,8 +214,6 @@ Zacznij dzień od najważniejszego zadania jako pierwszego (zasada *Eat That Fro
 """
 
     try:
-        client, model = get_ai_client_and_model("llm")
-        
         goals_formatted = "\n".join([f"- {goal}" for goal in strategic_goals])
         completed_formatted = "\n".join([f"- {task}" for task in reflection_data.get("completed_tasks", [])])
         uncompleted_formatted = "\n".join([f"- {task}" for task in reflection_data.get("uncompleted_tasks", [])])
@@ -149,17 +235,13 @@ Dzisiejsza wieczorna refleksja:
 
 Wygeneruj zwięzłe podsumowanie z konstruktywnymi wnioskami optymalizacyjnymi na jutro w formacie Markdown. Twoja odpowiedź powinna być wspierająca, obiektywna i skupiona na konkretnych krokach poprawy."""
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+        return _call_gemini_chat(
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
-            max_tokens=500
+            max_tokens=1500
         )
-        return response.choices[0].message.content
     except Exception as e:
-        print(f"Błąd OpenAI API: {e}. Fallback do demo refleksji.")
+        print(f"Błąd Gemini API: {e}. Fallback do demo refleksji.")
         return """# Analiza Mentora (Demo AI - Błąd Połączenia)
 
 Przeanalizowałem Twój dzisiejszy dzień w odniesieniu do celów strategicznych. Oto moje spostrzeżenia:
@@ -266,43 +348,57 @@ def extract_audio_for_whisper(input_bytes: bytes, mime_type: str) -> str:
         return in_path
 
 def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
-    # Fallback jeśli żaden klucz API nie jest skonfigurowany
-    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY and not settings.GEMINI_API_KEY:
+    # Fallback jeśli żaden klucz Gemini API nie jest skonfigurowany
+    if not get_candidate_gemini_keys():
         return {
             "title": "Transkrypcja (Demo)",
-            "content": "To jest przykładowa transkrypcja wygenerowana ponieważ brakuje kluczy API w pliku .env.\n\n- [ ] Przeanalizuj to zadanie\n- [ ] Zaplanuj kolejne kroki"
+            "content": "To jest przykładowa transkrypcja wygenerowana ponieważ brakuje klucza GEMINI_API_KEY w pliku .env.\n\n- [ ] Przeanalizuj to zadanie\n- [ ] Zaplanuj kolejne kroki"
         }
 
     try:
-        # Ekstrakcja audio z nagrania wideo/audio dla OpenAI Whisper (drastyczna redukcja rozmiaru pliku)
+        # Ekstrakcja audio z nagrania wideo/audio (redukcja rozmiaru pliku do MP3 64k)
         temp_path = extract_audio_for_whisper(file_bytes, mime_type)
+        audio_mime = "audio/mp3" if temp_path.endswith(".mp3") else (mime_type.split(";")[0].strip() or "audio/webm")
 
         try:
-            # Transkrypcja pliku za pomocą modelu Whisper (z automatycznym fallbackiem)
             transcribed_text = ""
             try:
-                whisper_client, whisper_model = get_ai_client_and_model("whisper")
-                with open(temp_path, "rb") as audio_file:
-                    transcript = whisper_client.audio.transcriptions.create(
-                        model=whisper_model,
-                        file=audio_file,
-                        language="pl",
-                        prompt="Polska narada, cele, zadania, notatki, planowanie."
-                    )
-                transcribed_text = transcript.text
-            except Exception as whisper_err:
-                print(f"[Whisper Primary Failed: {whisper_err}]. Próba OpenAI whisper-1...")
-                if settings.OPENAI_API_KEY:
-                    with open(temp_path, "rb") as audio_file:
-                        transcript = get_openai_client().audio.transcriptions.create(
-                            model="whisper-1",
-                            file=audio_file,
-                            language="pl"
-                        )
-                    transcribed_text = transcript.text
-                else:
-                    raise whisper_err
-            
+                transcribed_text = transcribe_audio_with_gemini(temp_path, mime_type=audio_mime)
+            except Exception as trans_err:
+                if not (mime_type or "").startswith("video"):
+                    raise trans_err
+                print(f"Ostrzeżenie: Transkrypcja audio z wideo nie powiodła się ({trans_err}), próba analizy wizualnej klatek.")
+
+            # Dla wideo bez rozpoznanej mowy spróbuj analizy wizualnej klatek
+            if not transcribed_text.strip() and (mime_type or "").startswith("video"):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as vf:
+                    vf.write(file_bytes)
+                    v_path = vf.name
+                try:
+                    frames_b64 = extract_video_frames(v_path, num_frames=4)
+                finally:
+                    if os.path.exists(v_path):
+                        os.remove(v_path)
+                if frames_b64:
+                    user_parts = [{"type": "text", "text": "Nagranie wideo nie zawiera rozpoznawalnej ścieżki mowy. Przeanalizuj załączone klatki obrazu i utwórz ustrukturyzowaną notatkę zgodnie z instrukcją systemową."}]
+                    for b64 in frames_b64:
+                        user_parts.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+                    response_text = _call_gemini_chat(
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": user_parts}
+                        ],
+                        temperature=0.3,
+                        max_tokens=2048
+                    ).strip()
+                    start_idx = response_text.find("{")
+                    end_idx = response_text.rfind("}")
+                    if start_idx != -1 and end_idx != -1:
+                        response_text = response_text[start_idx:end_idx + 1]
+                    result = json.loads(response_text.strip())
+                    result["raw_transcript"] = "[Analiza wizualna nagrania wideo]"
+                    return result
+
             # Opcjonalne zabezpieczenie przed pustą transkrypcją
             if not transcribed_text.strip():
                 return {
@@ -310,24 +406,20 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
                     "content": "Nie udało się rozpoznać mowy w nagraniu."
                 }
 
-            # Pobierz odpowiedniego klienta i model dla analizy tekstu
-            llm_client, llm_model = get_ai_client_and_model("llm")
-
-            # Analiza i strukturyzacja przetranskrybowanego tekstu
-            response = llm_client.chat.completions.create(
-                model=llm_model,
+            # Analiza i strukturyzacja przetranskrybowanego tekstu przez Google Gemini
+            response_text = _call_gemini_chat(
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"Oto transkrypcja nagrania do przeanalizowania i sformatowania:\n\n{transcribed_text}"}
-                ]
-            )
+                ],
+                temperature=0.3,
+                max_tokens=2048
+            ).strip()
             
-            response_text = response.choices[0].message.content.strip()
-            
-            if response_text.startswith("```json"):
-                response_text = response_text[7:]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
+            start_idx = response_text.find("{")
+            end_idx = response_text.rfind("}")
+            if start_idx != -1 and end_idx != -1:
+                response_text = response_text[start_idx:end_idx + 1]
                 
             result = json.loads(response_text.strip())
             result["raw_transcript"] = transcribed_text
@@ -338,7 +430,7 @@ def _analyze_media(file_bytes: bytes, mime_type: str, prompt: str) -> dict:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
     except Exception as e:
-        print(f"Błąd analizy mediów AI: {e}. Fallback do danych zastępczych.")
+        print(f"Błąd analizy mediów Gemini AI: {e}. Fallback do danych zastępczych.")
         return {
             "title": "Notatka z nagrania (Offline)",
             "content": f"Nagranie zostało zapisane. Transkrypcja i analiza przez AI są chwilowo niedostępne z powodu błędu: {e}"
@@ -424,13 +516,12 @@ def extract_video_frames(video_path: str, num_frames: int = 6) -> list[str]:
 
 def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: str = None, media_type: str = None, events: list = None, raw_transcript: str = None) -> str:
     """
-    Prowadzi konwersację z AI na temat podanej notatki.
+    Prowadzi konwersację z AI (Google Gemini) na temat podanej notatki.
     """
-    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
-        return "To jest wersja demo czatu z AI, ponieważ brak klucza API. Wyobraź sobie, że odpowiadam na Twoje pytanie!\n\n<REWRITTEN_NOTE>\nTo jest przykładowa (zmieniona) treść notatki.\n</REWRITTEN_NOTE>"
+    if not get_candidate_gemini_keys():
+        return "To jest wersja demo czatu z AI, ponieważ brak klucza GEMINI_API_KEY. Wyobraź sobie, że odpowiadam na Twoje pytanie!\n\n<REWRITTEN_NOTE>\nTo jest przykładowa (zmieniona) treść notatki.\n</REWRITTEN_NOTE>"
 
     try:
-        client, model = get_ai_client_and_model("llm")
         # Przytnij historię do ostatnich 10 wiadomości, aby ograniczyć koszty tokenów
         trimmed_history = chat_history[-10:]
         
@@ -453,8 +544,8 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
         for msg in trimmed_history:
             messages.append({"role": msg.role, "content": msg.content})
 
-        # Klatki wideo tylko dla OpenAI (modele Groq są wyłącznie tekstowe)
-        if media_url and media_type and media_type.startswith("video") and not settings.GROQ_API_KEY:
+        # Ekstrakcja klatek wideo dla multimodalnego modelu Gemini
+        if media_url and media_type and media_type.startswith("video"):
             frames_b64 = []
             if media_url.startswith("data:"):
                 try:
@@ -497,13 +588,9 @@ def chat_with_ai_about_note(note_content: str, chat_history: list, media_url: st
                         })
                     messages[last_user_idx]["content"] = content_list
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages
-        )
-        return response.choices[0].message.content
+        return _call_gemini_chat(messages=messages, temperature=0.5, max_tokens=2048)
     except Exception as e:
-        print(f"Błąd OpenAI API w czacie notatki: {e}")
+        print(f"Błąd Gemini API w czacie notatki: {e}")
         return "Przepraszam, wystąpił problem z serwerami AI. Spróbuj ponownie później."
 
 def generate_handoff_summary(note_content: str, delegate_name: str) -> str:
@@ -511,23 +598,22 @@ def generate_handoff_summary(note_content: str, delegate_name: str) -> str:
     Analizuje treść notatki i generuje zwięzłe podsumowanie zadań przeznaczonych dla konkretnego delegata.
     """
     try:
-        client, model = get_ai_client_and_model("llm")
         prompt = (
             f"Przeanalizuj poniższą notatkę i przygotuj zwięzłe, uporządkowane podsumowanie zadań oraz wątków, "
             f"które dotyczą wyłącznie osoby o imieniu/nazwie '{delegate_name}'. "
             f"Stwórz jasną listę punktów do zrealizowania dla tej osoby. "
             f"Nie dodawaj wstępów ani zbędnych wyjaśnień, sformatuj tekst czytelnie w Markdown."
         )
-        response = client.chat.completions.create(
-            model=model,
+        return _call_gemini_chat(
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": note_content}
-            ]
+            ],
+            temperature=0.3,
+            max_tokens=1500
         )
-        return response.choices[0].message.content
     except Exception as e:
-        print(f"Błąd OpenAI/Groq API w generowaniu handoff summary: {e}")
+        print(f"Błąd Gemini API w generowaniu handoff summary: {e}")
         return f"Zadanie przekazane do {delegate_name}. Brak dodatkowego podsumowania."
 
 GOALS_CHAT_SYSTEM_PROMPT = """
@@ -558,9 +644,9 @@ Styl wypowiedzi:
 
 def chat_with_ai_about_goals(messages: list, current_tiles: list = None, strategic_goals: list = None) -> str:
     """
-    Prowadzi konwersację z AI na temat kafelków, osi 2D oraz celów strategicznych użytkownika.
+    Prowadzi konwersację z AI (Google Gemini) na temat kafelków, osi 2D oraz celów strategicznych użytkownika.
     """
-    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY and not settings.GEMINI_API_KEY:
+    if not get_candidate_gemini_keys():
         return (
             "Świetnie, że nad tym pracujesz! W oparciu o Twoje obecne kafelki, kluczowym kolejnym krokiem "
             "powinno być skupienie się na walidacji i egzekucji.\n\n"
@@ -569,7 +655,6 @@ def chat_with_ai_about_goals(messages: list, current_tiles: list = None, strateg
         )
 
     try:
-        client, model = get_ai_client_and_model("llm")
         trimmed_history = messages[-10:]
 
         system_content = GOALS_CHAT_SYSTEM_PROMPT
@@ -596,15 +681,13 @@ def chat_with_ai_about_goals(messages: list, current_tiles: list = None, strateg
             content = msg.get("content", "")
             chat_msgs.append({"role": role, "content": content})
 
-        response = client.chat.completions.create(
-            model=model,
+        return _call_gemini_chat(
             messages=chat_msgs,
             temperature=0.7,
-            max_tokens=600
+            max_tokens=1500
         )
-        return response.choices[0].message.content
     except Exception as e:
-        print(f"Błąd AI API w czacie celów: {e}")
+        print(f"Błąd Gemini API w czacie celów: {e}")
         return "Przepraszam, wystąpił problem z połączeniem z serwerem AI. Spróbuj ponownie za chwilę."
 
 def suggest_tiles_for_goal(title: str, description: str) -> list[str]:
@@ -612,7 +695,7 @@ def suggest_tiles_for_goal(title: str, description: str) -> list[str]:
     Generuje sugestie kafelków do osi 2D na podstawie tytułu i opisu celu.
     Zwraca listę stringów (nazw kafelków).
     """
-    if not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY and not settings.GEMINI_API_KEY:
+    if not get_candidate_gemini_keys():
         return [
             "Walidacja rynkowa",
             "Prototyp (MVP)",
@@ -622,7 +705,6 @@ def suggest_tiles_for_goal(title: str, description: str) -> list[str]:
         ]
 
     try:
-        client, model = get_ai_client_and_model("llm")
         prompt = f"""Jesteś doradcą ds. celów i produktywności.
 Użytkownik utworzył nowy cel strategiczny:
 Tytuł: {title}
@@ -638,14 +720,12 @@ Odpowiedz WYŁĄCZNIE jako czysta tablica JSON w formacie:
 ["Nazwa 1", "Nazwa 2", "Nazwa 3"]
 Nie dodawaj żadnych innych tekstów ani tagów markdown."""
 
-        response = client.chat.completions.create(
-            model=model,
+        response_text = _call_gemini_chat(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=300
-        )
-        
-        response_text = response.choices[0].message.content.strip()
+            max_tokens=1000
+        ).strip()
+
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
@@ -653,13 +733,12 @@ Nie dodawaj żadnych innych tekstów ani tagów markdown."""
         if response_text.endswith("```"):
             response_text = response_text[:-3]
             
-        import json
         result = json.loads(response_text.strip())
         if isinstance(result, list):
             return result
         return []
     except Exception as e:
-        print(f"Błąd AI API w suggest_tiles_for_goal: {e}")
+        print(f"Błąd Gemini API w suggest_tiles_for_goal: {e}")
         return [
             "Pierwszy kamień milowy",
             "Kluczowy nawyk",
@@ -672,7 +751,7 @@ def analyze_live_inspection(frame_base64: str = None, user_text: str = None, his
     Analizuje klatkę wideo na żywo z kamery inspektora oraz jego wypowiedź głosową.
     Zwraca odpowiedź rzeczoznawcy AI Gemini w czasie rzeczywistym.
     """
-    if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY and not settings.GROQ_API_KEY:
+    if not get_candidate_gemini_keys():
         return {
             "ai_response": "Tryb podglądu inspekcji (Demo). Wymagany klucz GEMINI_API_KEY.",
             "has_issue": False,
@@ -682,8 +761,6 @@ def analyze_live_inspection(frame_base64: str = None, user_text: str = None, his
         }
 
     try:
-        client, model = get_ai_client_and_model("llm")
-        
         system_prompt = """Jesteś asystentem i ekspertem rzeczoznawcą budowlanym podczas inspekcji technicznej na żywo.
 
 TRYBY PRACY I ZASADY KOMUNIKACJI GŁOSOWEJ:
@@ -726,14 +803,11 @@ Zwróć wynik WYŁĄCZNIE jako czysty obiekt JSON:
                 }
             })
 
-        response = client.chat.completions.create(
-            model=model,
+        response_text = _call_gemini_chat(
             messages=[{"role": "user", "content": content_parts}],
             temperature=0.2,
-            max_tokens=800
-        )
-
-        response_text = response.choices[0].message.content.strip()
+            max_tokens=1500
+        ).strip()
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
