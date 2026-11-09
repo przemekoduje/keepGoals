@@ -122,17 +122,40 @@ deploy_frontend() {
     mkdir -p redirect_public && touch redirect_public/404.html
     firebase deploy --only hosting --project "$FIREBASE_DB_PROJECT" || true
 
-    # Synchronizacja ze stroną główną przemokoduje.com (/keepgoals)
-    if [ -d "../AI-english_buddy/frontend/build" ]; then
-        echo "🌐 Aktualizacja podkatalogu /keepgoals na przemokoduje.com (Projekt: $HOSTING_PROJECT)..."
-        rm -rf ../AI-english_buddy/frontend/build/keepgoals
-        mkdir -p ../AI-english_buddy/frontend/build/keepgoals
-        cp -r frontend/dist/. ../AI-english_buddy/frontend/build/keepgoals/
-        if [ -f "../AI-english_buddy/portal/index.html" ]; then
-            cp ../AI-english_buddy/portal/index.html portal/index.html
-            cp ../AI-english_buddy/portal/index.html ../AI-english_buddy/frontend/build/index.html
+    # Synchronizacja ze stroną główną przemokoduje.com (/keepgoals) z ochroną integralności Speakling
+    SPEAKLING_DIR=""
+    if [ -d "../AI-English-Buddy" ]; then
+        SPEAKLING_DIR="../AI-English-Buddy"
+    elif [ -d "../AI-english_buddy" ]; then
+        SPEAKLING_DIR="../AI-english_buddy"
+    fi
+
+    if [ -n "$SPEAKLING_DIR" ]; then
+        echo "🌐 Synchronizacja repozytorium Speakling ($SPEAKLING_DIR) z GitHub..."
+        (cd "$SPEAKLING_DIR" && git fetch origin main && git pull --ff-only origin main || true)
+
+        KG_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+        if [ -n "$KG_HEAD" ] && [ -d "frontend/dist" ]; then
+            echo "$KG_HEAD" > frontend/dist/.keepgoals-commit
         fi
-        (cd ../AI-english_buddy && npx firebase-tools deploy --only hosting --project "$HOSTING_PROJECT")
+
+        SP_HEAD=$(cd "$SPEAKLING_DIR" && git rev-parse HEAD 2>/dev/null || echo "")
+        SP_BUILT=""
+        if [ -f "$SPEAKLING_DIR/frontend/build/.speakling-commit" ]; then
+            SP_BUILT=$(cat "$SPEAKLING_DIR/frontend/build/.speakling-commit")
+        fi
+
+        if [ ! -f "$SPEAKLING_DIR/frontend/build/speakling.html" ] || [ "$SP_HEAD" != "$SP_BUILT" ]; then
+            echo "🔨 Wykryto nowszą wersję Speakling w Git ($SP_HEAD vs $SP_BUILT) — pełna przebudowa i synchronizacja..."
+            (cd "$SPEAKLING_DIR" && ./deploy.sh)
+        else
+            echo "🌐 Aktualizacja podkatalogu /keepgoals i weryfikacja integralności..."
+            if [ -f "portal/index.html" ]; then
+                cp portal/index.html "$SPEAKLING_DIR/portal/index.html"
+                cp portal/index.html "$SPEAKLING_DIR/frontend/build/index.html"
+            fi
+            (cd "$SPEAKLING_DIR" && python3 scripts/sync-and-verify-bundle.py && npx firebase-tools deploy --only hosting --project "$HOSTING_PROJECT" && npx firebase-tools deploy --only hosting --project przemokoduje-online)
+        fi
     fi
 
     echo "✅ Frontend wdrożony pomyślnie na https://przemokoduje.com/keepgoals !"
